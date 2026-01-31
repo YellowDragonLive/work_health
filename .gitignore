@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+build/
+dist/
+
+# App Specific
+app.log
+src/config.json
+src/assets/default_music.wav
+src/assets/icon.png
+
+# IDEs
+.vscode/
+.idea/
