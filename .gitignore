@@ -9,8 +9,12 @@ dist/
 # App Specific
 app.log
 src/config.json
+src/health_data.json
 src/assets/default_music.wav
 src/assets/icon.png
+*.mp3
+*.wav
+
 
 # IDEs
 .vscode/
