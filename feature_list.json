@@ -1,0 +1,19 @@
+{
+    "features": [
+        {
+            "id": "file_cleanup",
+            "description": "违规文本已从物理磁盘移除",
+            "passes": false
+        },
+        {
+            "id": "logging_improved",
+            "description": "config_manager 异常已记录到日志",
+            "passes": false
+        },
+        {
+            "id": "path_dynamic",
+            "description": "代码不再依赖硬编码绝对路径",
+            "passes": false
+        }
+    ]
+}

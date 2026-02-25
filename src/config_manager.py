@@ -11,8 +11,8 @@ def load_config():
         try:
             with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
                 return json.load(f)
-        except:
-            pass
+        except Exception as e:
+            logging.error(f"Load Config Error: {e}")
     return {"music_path": None, "work_duration": 25}
 
 def save_config(config):
@@ -27,8 +27,8 @@ def load_health_data():
         try:
             with open(HEALTH_DATA_FILE, 'r', encoding='utf-8') as f:
                 return json.load(f)
-        except:
-            pass
+        except Exception as e:
+            logging.error(f"Load Health Data Error: {e}")
     return {}
 
 def save_health_data(data):

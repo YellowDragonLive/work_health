@@ -1,0 +1,28 @@
+{
+    "project_name": "HealthAssistant Code Cleanup & Hardening",
+    "goal": "执行代码审查建议：清理违规文件、优化异常处理、动态化路径",
+    "phases": [
+        {
+            "id": "cleanup",
+            "description": "删除 testx.txt 违规文件",
+            "status": "pending"
+        },
+        {
+            "id": "refactor_config",
+            "description": "优化 config_manager.py 的异常处理",
+            "status": "pending"
+        },
+        {
+            "id": "refactor_main",
+            "description": "主程序路径动态化与性能微调",
+            "status": "pending"
+        },
+        {
+            "id": "verify_commit",
+            "description": "验证并提交更改",
+            "status": "pending"
+        }
+    ],
+    "decisions": [],
+    "findings": []
+}
