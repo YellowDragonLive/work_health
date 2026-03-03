@@ -19,3 +19,10 @@ src/assets/icon.png
 # IDEs
 .vscode/
 .idea/
+
+# Agent Workflow Files
+_run_*.py
+debug_report.md
+task_plan.json
+feature_list.json
+progress.json

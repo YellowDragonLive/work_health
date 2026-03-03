@@ -26,30 +26,28 @@ def get_idle_duration():
         return max(0, millis / 1000.0)
     return 0
 
-def _send_potplayer_command(cmd_code):
-    """Sends a specific command code to PotPlayer via WM_COMMAND."""
-    user32 = ctypes.windll.user32
-    for class_name in ["PotPlayer64", "PotPlayer"]:
-        hwnd = user32.FindWindowW(class_name, None)
-        if hwnd:
-            logging.info(f"PotPlayer found ({class_name}), sending command: {cmd_code}")
-            user32.PostMessageW(hwnd, 0x0111, cmd_code, 0)
 
-def _send_global_media_key():
-    """Sends a global Play/Pause media key signal."""
-    logging.info("Sending global media Play/Pause signal.")
-    ctypes.windll.user32.keybd_event(0xB3, 0, 0, 0)  # Key down
-    ctypes.windll.user32.keybd_event(0xB3, 0, 2, 0)  # Key up
+def _send_global_pause():
+    """Sends a global media STOP command using virtual keys."""
+    logging.info("Sending global media STOP via keybd_event (0xB2)")
+    # 0xB2 is VK_MEDIA_STOP. 
+    # Unlike PLAY_PAUSE (0xB3), STOP will not resume already paused media.
+    # It is broadcasted globally by the OS to all listening apps (Chrome, Spotify, etc.)
+    user32 = ctypes.windll.user32
+    user32.keybd_event(0xB2, 0, 0, 0)  # Key down
+    user32.keybd_event(0xB2, 0, 2, 0)  # Key up
 
 def pause_all_media():
+    """Only pause media. Resuming is left to the user."""
     logging.info("Executing pause_all_media sequence.")
-    _send_potplayer_command(20000)  # CMD_PAUSE
-    _send_global_media_key()
+    # We use STOP (15) instead of PAUSE (47) to avoid "toggle" behavior
+    # where an already paused player starts playing again.
+    _send_global_pause()
 
 def resume_all_media():
-    logging.info("Executing resume_all_media sequence.")
-    _send_potplayer_command(20001)  # CMD_PLAY
-    _send_global_media_key()
+    """Do nothing. Resuming is left to the user as requested."""
+    logging.info("resume_all_media called, but skipping execution as per user request.")
+    pass
 
 
 class Monitor:
