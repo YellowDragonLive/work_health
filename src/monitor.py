@@ -215,6 +215,14 @@ class Monitor:
 
             def close_windows():
                 try:
+                    from view import close_active_window
+
+                    close_active_window()
+                except Exception as e:
+                    logging.error(f"Error closing active window: {e}")
+
+                # 兜底：销毁可能存在的其他顶层窗口（如健康录入等）
+                try:
                     import tkinter as tk
                     import main as _main
 

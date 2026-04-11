@@ -1,32 +1,40 @@
 import tkinter as tk
-from tkinter import ttk
-import threading
 import logging
+
+_active_window = None
+
+
+def show_reminder_process(message, duration, on_rest, on_snooze):
+    """Helper to instantiate and show the window in the main thread."""
+    global _active_window
+    if _active_window:
+        _active_window.force_close()
+
+    _active_window = ReminderWindow(message, duration, on_rest, on_snooze)
+    _active_window.show()
+
+
+def close_active_window():
+    """Explicitly closes the active reminder window from anywhere."""
+    global _active_window
+    if _active_window:
+        _active_window.force_close()
+        _active_window = None
 
 
 class ReminderWindow:
     def __init__(self, message, duration_seconds, on_start_rest, on_snooze):
-        """
-        Args:
-            message: Text to display.
-            duration_seconds: Duration of the break (for countdown).
-            on_start_rest: Callback when user clicks 'Start Rest'.
-            on_snooze: Callback when user clicks 'Snooze'.
-        """
         self.message = message
         self.duration_seconds = duration_seconds
         self.on_start_rest = on_start_rest
         self.on_snooze = on_snooze
+
         self.root = None
-        self.is_counting_down = False
+        self.timer_id = None
+        self.hide_timer_id = None
+        self.is_closed = False
 
     def show(self):
-        """
-        在主线程中创建并显示全屏提醒窗口。
-        使用 Toplevel 而非 Tk()，因为主线程已有 tk_root 根窗口。
-        使用 wait_window() 阻塞等待此窗口关闭（主线程的事件循环仍然响应）。
-        """
-        # 从主模块获取全局根窗口
         try:
             import main as _main
 
@@ -36,20 +44,16 @@ class ReminderWindow:
 
         self.root = tk.Toplevel(parent)
         self.root.title("久坐提醒")
-
-        # 将 on_destroy 绑定到窗口关闭事件，确保状态清理
-        self.root.protocol("WM_DELETE_WINDOW", self.close)
+        self.root.protocol("WM_DELETE_WINDOW", self.force_close)
 
         self.root.attributes("-topmost", True)
         self.root.attributes("-alpha", 0.95)
         self.root.attributes("-fullscreen", True)
         self.root.configure(bg="#2c3e50")
 
-        # Container frame for centering content
         self.main_container = tk.Frame(self.root, bg="#2c3e50")
         self.main_container.place(relx=0.5, rely=0.5, anchor=tk.CENTER)
 
-        # UI Elements inside container
         self.lbl_msg = tk.Label(
             self.main_container,
             text=self.message,
@@ -102,10 +106,6 @@ class ReminderWindow:
         )
         self.btn_hide.pack(pady=40)
 
-        # Bind Esc key
-        self.root.bind("<Escape>", lambda e: self._handle_hide())
-
-        # Countdown Label (Hidden initially)
         self.lbl_timer = tk.Label(
             self.main_container,
             text="",
@@ -114,103 +114,93 @@ class ReminderWindow:
             bg="#2c3e50",
         )
 
-        # 获取焦点
+        self.root.bind("<Escape>", lambda e: self._handle_hide())
+
         self.root.lift()
         self.root.focus_force()
 
-        # 阻塞等待此窗口关闭，主线程事件循环仍然响应
         logging.info("ReminderWindow: wait_window started.")
         self.root.wait_window(self.root)
         logging.info("ReminderWindow: wait_window returned (window closed).")
 
     def _handle_start_rest(self):
+        if self.is_closed:
+            return
+
         if self.on_start_rest:
             self.on_start_rest()
 
-        # UI Update
-        if getattr(self, "btn_rest", None) and self.btn_rest.winfo_exists():
-            self.btn_rest.pack_forget()
-        if getattr(self, "btn_snooze", None) and self.btn_snooze.winfo_exists():
-            self.btn_snooze.pack_forget()
+        self.btn_rest.pack_forget()
+        self.btn_snooze.pack_forget()
+        self.lbl_msg.config(text="请起立活动！")
+        self.lbl_timer.pack(pady=20)
 
-        if getattr(self, "root", None) and self.root.winfo_exists():
-            self.lbl_msg.config(text="请起立活动！")
-            self.lbl_timer.pack(pady=20)
-
-            # Start local countdown display
-            self.is_counting_down = True
-            self._update_timer(self.duration_seconds)
+        self._start_countdown(self.duration_seconds)
 
     def _handle_snooze(self):
+        if self.is_closed:
+            return
         if self.on_snooze:
             self.on_snooze()
-        self.close()
+        self.force_close()
 
     def _handle_hide(self):
-        """Temporarily hides the window for 15 seconds."""
-        if not getattr(self, "root", None) or not self.root.winfo_exists():
+        if self.is_closed:
             return
 
         logging.info("Hiding window for 15 seconds")
-
-        # 产生一个标记以避免隐藏和重置逻辑的竞争
-        self.is_hidden = True
         self.root.withdraw()
 
-        # Check carefully before restoring
-        def restore_window():
-            # 只有当依然标记为 hide 并且窗口对象没被主线程垃圾回收时，才进行重绘
-            if (
-                getattr(self, "is_hidden", False)
-                and getattr(self, "root", None)
-                and self.root.winfo_exists()
-            ):
-                logging.info("Restoring window after 15 seconds")
-                self.is_hidden = False
-                self.root.deiconify()
-                self.root.lift()
-                self.root.focus_force()
-            else:
-                logging.info(
-                    "Window was destroyed or state changed during hide, skipping restore"
-                )
+        self._cancel_timer("hide_timer_id")
 
-        self.root.after(15000, restore_window)
+        def restore():
+            if self.is_closed:
+                return
+            logging.info("Restoring window after 15 seconds")
+            self.root.deiconify()
+            self.root.lift()
+            self.root.focus_force()
 
-    def _update_timer(self, remaining):
-        if not getattr(self, "is_counting_down", False):
-            return
+        self.hide_timer_id = self.root.after(15000, restore)
 
-        if not getattr(self, "root", None) or not self.root.winfo_exists():
+    def _start_countdown(self, remaining):
+        if self.is_closed:
             return
 
         if remaining < 0:
-            self.close()
+            self.force_close()
             return
 
         mins, secs = divmod(remaining, 60)
         self.lbl_timer.config(text=f"{mins:02d}:{secs:02d}")
 
-        # Schedule next update
-        if getattr(self, "root", None) and self.root.winfo_exists():
-            self.root.after(1000, lambda: self._update_timer(remaining - 1))
+        self._cancel_timer("timer_id")
+        self.timer_id = self.root.after(
+            1000, lambda: self._start_countdown(remaining - 1)
+        )
 
-    def close(self):
-        self.is_counting_down = False
-        self.is_hidden = False
-        if getattr(self, "root", None):
+    def _cancel_timer(self, attr_name):
+        timer_id = getattr(self, attr_name, None)
+        if timer_id and self.root:
             try:
-                if self.root.winfo_exists():
-                    logging.info("ReminderWindow: Destroying root window.")
-                    # Release wait_window by destroying
-                    self.root.destroy()
+                self.root.after_cancel(timer_id)
+            except Exception:
+                pass
+        setattr(self, attr_name, None)
+
+    def force_close(self):
+        if self.is_closed:
+            return
+
+        logging.info("ReminderWindow: force_close executing.")
+        self.is_closed = True
+
+        self._cancel_timer("timer_id")
+        self._cancel_timer("hide_timer_id")
+
+        if self.root:
+            try:
+                self.root.destroy()
             except Exception as e:
                 logging.error(f"Error destroying window: {e}")
-            finally:
-                self.root = None
-
-
-def show_reminder_process(message, duration, on_rest, on_snooze):
-    """Helper to instantiate and show the window in the main thread."""
-    w = ReminderWindow(message, duration, on_rest, on_snooze)
-    w.show()
+            self.root = None
