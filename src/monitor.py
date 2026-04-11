@@ -150,22 +150,20 @@ class Monitor:
             try:
                 # 再次检查状态，如果在等待期间被重置了就直接返回
                 if self.state not in ["PROMPT", "BREAK"]:
-                    logging.info("State changed before window could be shown, aborting show.")
+                    logging.info(
+                        "State changed before window could be shown, aborting show."
+                    )
                     return
 
-                msg = f"休息时间到，请起身活动！" if self.break_duration_seconds < 60 else f"阅读结束，请起身活动 {self.break_duration_seconds // 60} 分钟！"
-                
+                msg = (
+                    f"休息时间到，请起身活动！"
+                    if self.break_duration_seconds < 60
+                    else f"阅读结束，请起身活动 {self.break_duration_seconds // 60} 分钟！"
+                )
+
                 show_reminder_process(
                     message=msg,
                     duration=self.break_duration_seconds,
-                    on_rest=self.on_user_start_rest,
-                    on_snooze=self.on_user_snooze,
-                )
-                    return
-
-                show_reminder_process(
-                    message="阅读结束，请起身活动 5 分钟！",
-                    duration=BREAK_DURATION,
                     on_rest=self.on_user_start_rest,
                     on_snooze=self.on_user_snooze,
                 )
