@@ -128,9 +128,12 @@ class ReminderWindow:
             self.on_start_rest()
 
         # UI Update
-        self.btn_rest.pack_forget()
-        self.btn_snooze.pack_forget()
-        if self.root and self.root.winfo_exists():
+        if getattr(self, "btn_rest", None) and self.btn_rest.winfo_exists():
+            self.btn_rest.pack_forget()
+        if getattr(self, "btn_snooze", None) and self.btn_snooze.winfo_exists():
+            self.btn_snooze.pack_forget()
+
+        if getattr(self, "root", None) and self.root.winfo_exists():
             self.lbl_msg.config(text="请起立活动！")
             self.lbl_timer.pack(pady=20)
 
@@ -145,21 +148,40 @@ class ReminderWindow:
 
     def _handle_hide(self):
         """Temporarily hides the window for 15 seconds."""
-        if not self.root or not self.root.winfo_exists():
+        if not getattr(self, "root", None) or not self.root.winfo_exists():
             return
+
+        logging.info("Hiding window for 15 seconds")
+
+        # 产生一个标记以避免隐藏和重置逻辑的竞争
+        self.is_hidden = True
         self.root.withdraw()
-        self.root.after(
-            15000,
-            lambda: self.root.deiconify()
-            if self.root and self.root.winfo_exists()
-            else None,
-        )
+
+        # Check carefully before restoring
+        def restore_window():
+            # 只有当依然标记为 hide 并且窗口对象没被主线程垃圾回收时，才进行重绘
+            if (
+                getattr(self, "is_hidden", False)
+                and getattr(self, "root", None)
+                and self.root.winfo_exists()
+            ):
+                logging.info("Restoring window after 15 seconds")
+                self.is_hidden = False
+                self.root.deiconify()
+                self.root.lift()
+                self.root.focus_force()
+            else:
+                logging.info(
+                    "Window was destroyed or state changed during hide, skipping restore"
+                )
+
+        self.root.after(15000, restore_window)
 
     def _update_timer(self, remaining):
-        if not self.is_counting_down:
+        if not getattr(self, "is_counting_down", False):
             return
 
-        if not self.root or not self.root.winfo_exists():
+        if not getattr(self, "root", None) or not self.root.winfo_exists():
             return
 
         if remaining < 0:
@@ -170,18 +192,20 @@ class ReminderWindow:
         self.lbl_timer.config(text=f"{mins:02d}:{secs:02d}")
 
         # Schedule next update
-        if self.root and self.root.winfo_exists():
+        if getattr(self, "root", None) and self.root.winfo_exists():
             self.root.after(1000, lambda: self._update_timer(remaining - 1))
 
     def close(self):
         self.is_counting_down = False
+        self.is_hidden = False
         if getattr(self, "root", None):
             try:
                 if self.root.winfo_exists():
+                    logging.info("ReminderWindow: Destroying root window.")
                     # Release wait_window by destroying
                     self.root.destroy()
-            except Exception:
-                pass
+            except Exception as e:
+                logging.error(f"Error destroying window: {e}")
             finally:
                 self.root = None
 
