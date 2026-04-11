@@ -17,6 +17,7 @@ class LASTINPUTINFO(ctypes.Structure):
         ("dwTime", ctypes.c_uint),
     ]
 
+
 def get_idle_duration():
     """Returns the time in seconds since the last user input (mouse/keyboard)."""
     lastInputInfo = LASTINPUTINFO()
@@ -30,12 +31,13 @@ def get_idle_duration():
 def _send_global_pause():
     """Sends a global media STOP command using virtual keys."""
     logging.info("Sending global media STOP via keybd_event (0xB2)")
-    # 0xB2 is VK_MEDIA_STOP. 
+    # 0xB2 is VK_MEDIA_STOP.
     # Unlike PLAY_PAUSE (0xB3), STOP will not resume already paused media.
     # It is broadcasted globally by the OS to all listening apps (Chrome, Spotify, etc.)
     user32 = ctypes.windll.user32
     user32.keybd_event(0xB2, 0, 0, 0)  # Key down
     user32.keybd_event(0xB2, 0, 2, 0)  # Key up
+
 
 def pause_all_media():
     """Only pause media. Resuming is left to the user."""
@@ -44,6 +46,7 @@ def pause_all_media():
     # where an already paused player starts playing again.
     _send_global_pause()
 
+
 def resume_all_media():
     """Do nothing. Resuming is left to the user as requested."""
     logging.info("resume_all_media called, but skipping execution as per user request.")
@@ -51,7 +54,9 @@ def resume_all_media():
 
 
 class Monitor:
-    def __init__(self, assets_dir, music_path=None, work_duration_minutes=25, gui_queue=None):
+    def __init__(
+        self, assets_dir, music_path=None, work_duration_minutes=25, gui_queue=None
+    ):
         self.assets_dir = assets_dir
         self.running = True
         self.paused = False
@@ -62,6 +67,7 @@ class Monitor:
 
         # Audio
         from audio import AudioManager
+
         if music_path and os.path.exists(music_path):
             target_music = music_path
         else:
@@ -135,12 +141,13 @@ class Monitor:
         def show_window():
             """此函数由主线程通过 gui_queue 调用，在主线程安全地创建 Tkinter 窗口。"""
             from view import show_reminder_process
+
             try:
                 show_reminder_process(
                     message="阅读结束，请起身活动 5 分钟！",
                     duration=BREAK_DURATION,
                     on_rest=self.on_user_start_rest,
-                    on_snooze=self.on_user_snooze
+                    on_snooze=self.on_user_snooze,
                 )
             except Exception as e:
                 logging.error(f"GUI Error in show_window: {e}", exc_info=True)
@@ -185,6 +192,23 @@ class Monitor:
         self.work_duration_seconds = self.work_duration_minutes * 60
         self.work_time_remaining = self.work_duration_seconds
         self.last_sync_time = time.time()
+
+        if self.gui_queue:
+
+            def close_windows():
+                try:
+                    import tkinter as tk
+                    import main as _main
+
+                    parent = getattr(_main, "tk_root", None)
+                    if parent:
+                        for widget in parent.winfo_children():
+                            if isinstance(widget, tk.Toplevel):
+                                widget.destroy()
+                except Exception as e:
+                    logging.error(f"Error closing Toplevels: {e}")
+
+            self.gui_queue.put(close_windows)
 
     def update_work_duration(self, minutes):
         self.work_duration_minutes = minutes
