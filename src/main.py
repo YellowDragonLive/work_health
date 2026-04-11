@@ -8,7 +8,7 @@ import logging
 from PIL import Image
 from monitor import Monitor
 from config_manager import load_config, save_config, load_health_data
-from utils import hide_console, set_autostart
+from utils import hide_console, is_autostart_enabled, set_autostart
 from health_view import record_health_data, check_today_record_status
 
 # Configure Logging
@@ -17,15 +17,17 @@ LOG_FILE = os.path.join(os.path.dirname(BASE_DIR), "app.log")
 logging.basicConfig(
     filename=LOG_FILE,
     level=logging.DEBUG,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    encoding='utf-8'
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    encoding="utf-8",
 )
+
 
 def handle_exception(exc_type, exc_value, exc_traceback):
     if issubclass(exc_type, KeyboardInterrupt):
         sys.__excepthook__(exc_type, exc_value, exc_traceback)
         return
     logging.error("Uncaught exception", exc_info=(exc_type, exc_value, exc_traceback))
+
 
 sys.excepthook = handle_exception
 logging.info("--- Application Started ---")
@@ -54,18 +56,19 @@ def select_music(icon, item):
 
     def do_select():
         from tkinter import filedialog
+
         file_path = filedialog.askopenfilename(
             parent=tk_root,
             title="选择提醒音乐",
-            filetypes=[("音乐文件", "*.mp3 *.wav"), ("所有文件", "*.*")]
+            filetypes=[("音乐文件", "*.mp3 *.wav"), ("所有文件", "*.*")],
         )
-        result['path'] = file_path
+        result["path"] = file_path
         done_event.set()
 
     gui_queue.put(do_select)
     done_event.wait()
 
-    file_path = result.get('path', '')
+    file_path = result.get("path", "")
     if file_path:
         if monitor_app.audio.set_music(file_path):
             config = load_config()
@@ -82,14 +85,17 @@ def set_duration(icon, item):
     def do_set_duration():
         import tkinter as tk
         from tkinter import messagebox
+
         root = tk.Toplevel(tk_root)
         root.title("设定计时时长")
         root.attributes("-topmost", True)
         width, height = 300, 150
         sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
-        root.geometry(f"{width}x{height}+{int(sw/2-width/2)}+{int(sh/2-height/2)}")
+        root.geometry(
+            f"{width}x{height}+{int(sw / 2 - width / 2)}+{int(sh / 2 - height / 2)}"
+        )
         tk.Label(root, text="请输入工作时长 (1-120 分钟):", pady=10).pack()
-        entry = tk.Entry(root, justify='center')
+        entry = tk.Entry(root, justify="center")
         entry.insert(0, str(monitor_app.work_duration_minutes))
         entry.pack(pady=5)
         entry.focus_set()
@@ -102,7 +108,9 @@ def set_duration(icon, item):
                     result["val"] = val
                     root.destroy()
                 else:
-                    messagebox.showwarning("范围错误", "请输入 1 到 120 之间的数字", parent=root)
+                    messagebox.showwarning(
+                        "范围错误", "请输入 1 到 120 之间的数字", parent=root
+                    )
             except ValueError:
                 messagebox.showerror("格式错误", "请输入有效的数字", parent=root)
 
@@ -123,16 +131,32 @@ def set_duration(icon, item):
 
 
 def record_health_data_threaded(icon, item):
-    """在独立线程中运行健康数据 GUI（health_view 自己管理 Tk 生命周期）。"""
-    thread = threading.Thread(target=record_health_data, args=(icon, item), daemon=True)
-    thread.start()
+    """在主线程调度健康数据 GUI，避免 Tkinter 跨线程调用。"""
+    gui_queue.put(lambda: record_health_data(icon, item))
+
+
+def toggle_autostart(icon, item):
+    enable = not is_autostart_enabled()
+    set_autostart(enable)
+    logging.info("Autostart toggled. Enabled=%s", enable)
+    try:
+        icon.update_menu()
+    except Exception:
+        logging.debug(
+            "Failed to refresh tray menu after toggling autostart.", exc_info=True
+        )
 
 
 def get_status_text(item):
     if not monitor_app:
         return "启动中..."
     mins, secs = divmod(int(monitor_app.work_time_remaining), 60)
-    state_map = {"WORK": "工作中", "PROMPT": "提醒中", "BREAK": "休息中", "SNOOZE": "已推迟"}
+    state_map = {
+        "WORK": "工作中",
+        "PROMPT": "提醒中",
+        "BREAK": "休息中",
+        "SNOOZE": "已推迟",
+    }
     state_text = state_map.get(monitor_app.state, monitor_app.state)
     return f"状态: {state_text} | 剩余: {mins:02d}:{secs:02d} | 已完成: {monitor_app.completed_rounds} 轮"
 
@@ -143,13 +167,19 @@ def setup_tray():
     menu = pystray.Menu(
         pystray.MenuItem(get_status_text, lambda: None, enabled=False),
         pystray.Menu.SEPARATOR,
-        pystray.MenuItem(lambda item: "记录今日指标" + check_today_record_status(), record_health_data_threaded),
+        pystray.MenuItem(
+            lambda item: "记录今日指标" + check_today_record_status(),
+            record_health_data_threaded,
+        ),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("重置并开始工作", lambda icon, item: monitor_app.reset_work()),
         pystray.MenuItem("设定计时时长", set_duration),
         pystray.MenuItem("选择提醒音乐", select_music),
-        pystray.MenuItem("启用/禁用开机自启", lambda icon, item: set_autostart(True)),
-        pystray.MenuItem("退出", on_quit)
+        pystray.MenuItem(
+            lambda item: "禁用开机自启" if is_autostart_enabled() else "启用开机自启",
+            toggle_autostart,
+        ),
+        pystray.MenuItem("退出", on_quit),
     )
     return pystray.Icon("HealthAssistant", image, "久坐助手", menu)
 
@@ -158,6 +188,9 @@ def main():
     global monitor_app, tk_root
     import socket
     import tkinter as tk
+    import sys
+
+    is_test_mode = "--test" in sys.argv
 
     # 单例锁
     try:
@@ -170,10 +203,20 @@ def main():
     config = load_config()
     custom_music = config.get("music_path")
     work_dur = config.get("work_duration", 25)
+    break_dur = 5 * 60
+    snooze_dur = 5 * 60
+
+    if is_test_mode:
+        logging.info("Starting in TEST MODE: 1 min work, 10 sec break/snooze")
+        work_dur = 1
+        break_dur = 10
+        snooze_dur = 10
 
     if not custom_music:
         # 使用相对路径计算默认音乐位置
-        default_p = os.path.join(os.path.dirname(BASE_DIR), "Bonus Track04.炎と永远——罗德岛战记1OP.mp3")
+        default_p = os.path.join(
+            os.path.dirname(BASE_DIR), "Bonus Track04.炎と永远——罗德岛战记1OP.mp3"
+        )
         if os.path.exists(default_p):
             custom_music = default_p
 
@@ -182,7 +225,9 @@ def main():
         ASSETS_DIR,
         music_path=custom_music,
         work_duration_minutes=work_dur,
-        gui_queue=gui_queue
+        break_duration_seconds=break_dur,
+        snooze_duration_seconds=snooze_dur,
+        gui_queue=gui_queue,
     )
     threading.Thread(target=monitor_app.run, daemon=True).start()
 
@@ -205,6 +250,7 @@ def main():
 
     # 每日提醒通知
     from datetime import date
+
     if str(date.today()) not in load_health_data():
         icon.notify("Master, 别忘了记录今天的体重和血压哦！", "每日健康提醒")
 

@@ -5,9 +5,6 @@ import threading
 import logging
 
 # Constants
-WORK_DURATION = 25 * 60
-BREAK_DURATION = 5 * 60
-SNOOZE_DURATION = 5 * 60
 IDLE_PAUSE_THRESHOLD = 1200  # 20 minutes without input before pausing
 
 
@@ -55,13 +52,21 @@ def resume_all_media():
 
 class Monitor:
     def __init__(
-        self, assets_dir, music_path=None, work_duration_minutes=25, gui_queue=None
+        self,
+        assets_dir,
+        music_path=None,
+        work_duration_minutes=25,
+        break_duration_seconds=5 * 60,
+        snooze_duration_seconds=5 * 60,
+        gui_queue=None,
     ):
         self.assets_dir = assets_dir
         self.running = True
         self.paused = False
         self.state = "WORK"  # WORK, PROMPT, BREAK, SNOOZE
         self.work_duration_minutes = work_duration_minutes
+        self.break_duration_seconds = break_duration_seconds
+        self.snooze_duration_seconds = snooze_duration_seconds
         self.completed_rounds = 0
         self.gui_queue = gui_queue  # 主线程 GUI 任务队列
 
@@ -145,9 +150,17 @@ class Monitor:
             try:
                 # 再次检查状态，如果在等待期间被重置了就直接返回
                 if self.state not in ["PROMPT", "BREAK"]:
-                    logging.info(
-                        "State changed before window could be shown, aborting show."
-                    )
+                    logging.info("State changed before window could be shown, aborting show.")
+                    return
+
+                msg = f"休息时间到，请起身活动！" if self.break_duration_seconds < 60 else f"阅读结束，请起身活动 {self.break_duration_seconds // 60} 分钟！"
+                
+                show_reminder_process(
+                    message=msg,
+                    duration=self.break_duration_seconds,
+                    on_rest=self.on_user_start_rest,
+                    on_snooze=self.on_user_snooze,
+                )
                     return
 
                 show_reminder_process(
@@ -184,7 +197,7 @@ class Monitor:
         logging.info("User snoozed.")
         self.state = "SNOOZE"
         self.audio.stop()
-        self.work_time_remaining = SNOOZE_DURATION
+        self.work_time_remaining = self.snooze_duration_seconds
         self.last_sync_time = time.time()
         self.state = "WORK"
 
