@@ -37,6 +37,9 @@ class ReminderWindow:
         self.root = tk.Toplevel(parent)
         self.root.title("久坐提醒")
 
+        # 将 on_destroy 绑定到窗口关闭事件，确保状态清理
+        self.root.protocol("WM_DELETE_WINDOW", self.close)
+
         self.root.attributes("-topmost", True)
         self.root.attributes("-alpha", 0.95)
         self.root.attributes("-fullscreen", True)
@@ -127,12 +130,13 @@ class ReminderWindow:
         # UI Update
         self.btn_rest.pack_forget()
         self.btn_snooze.pack_forget()
-        self.lbl_msg.config(text="请起立活动！")
-        self.lbl_timer.pack(pady=20)
+        if self.root and self.root.winfo_exists():
+            self.lbl_msg.config(text="请起立活动！")
+            self.lbl_timer.pack(pady=20)
 
-        # Start local countdown display
-        self.is_counting_down = True
-        self._update_timer(self.duration_seconds)
+            # Start local countdown display
+            self.is_counting_down = True
+            self._update_timer(self.duration_seconds)
 
     def _handle_snooze(self):
         if self.on_snooze:
@@ -171,9 +175,15 @@ class ReminderWindow:
 
     def close(self):
         self.is_counting_down = False
-        if self.root:
-            self.root.destroy()
-            self.root = None
+        if getattr(self, "root", None):
+            try:
+                if self.root.winfo_exists():
+                    # Release wait_window by destroying
+                    self.root.destroy()
+            except Exception:
+                pass
+            finally:
+                self.root = None
 
 
 def show_reminder_process(message, duration, on_rest, on_snooze):

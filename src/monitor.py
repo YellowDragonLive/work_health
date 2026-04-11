@@ -143,6 +143,13 @@ class Monitor:
             from view import show_reminder_process
 
             try:
+                # 再次检查状态，如果在等待期间被重置了就直接返回
+                if self.state not in ["PROMPT", "BREAK"]:
+                    logging.info(
+                        "State changed before window could be shown, aborting show."
+                    )
+                    return
+
                 show_reminder_process(
                     message="阅读结束，请起身活动 5 分钟！",
                     duration=BREAK_DURATION,
