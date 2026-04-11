@@ -4,13 +4,13 @@ import logging
 _active_window = None
 
 
-def show_reminder_process(message, duration, on_rest, on_snooze):
+def show_reminder_process(message, duration, on_rest, on_snooze, on_close=None):
     """Helper to instantiate and show the window in the main thread."""
     global _active_window
     if _active_window:
         _active_window.force_close()
 
-    _active_window = ReminderWindow(message, duration, on_rest, on_snooze)
+    _active_window = ReminderWindow(message, duration, on_rest, on_snooze, on_close)
     _active_window.show()
 
 
@@ -23,11 +23,12 @@ def close_active_window():
 
 
 class ReminderWindow:
-    def __init__(self, message, duration_seconds, on_start_rest, on_snooze):
+    def __init__(self, message, duration_seconds, on_start_rest, on_snooze, on_close):
         self.message = message
         self.duration_seconds = duration_seconds
         self.on_start_rest = on_start_rest
         self.on_snooze = on_snooze
+        self.on_close = on_close
 
         self.root = None
         self.timer_id = None
@@ -119,9 +120,7 @@ class ReminderWindow:
         self.root.lift()
         self.root.focus_force()
 
-        logging.info("ReminderWindow: wait_window started.")
-        self.root.wait_window(self.root)
-        logging.info("ReminderWindow: wait_window returned (window closed).")
+        logging.info("ReminderWindow: Window shown (non-blocking).")
 
     def _handle_start_rest(self):
         if self.is_closed:
@@ -204,3 +203,9 @@ class ReminderWindow:
             except Exception as e:
                 logging.error(f"Error destroying window: {e}")
             self.root = None
+
+        if self.on_close:
+            try:
+                self.on_close()
+            except Exception as e:
+                logging.error(f"Error in on_close callback: {e}")

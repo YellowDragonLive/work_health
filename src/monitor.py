@@ -153,6 +153,7 @@ class Monitor:
                     logging.info(
                         "State changed before window could be shown, aborting show."
                     )
+                    done_event.set()
                     return
 
                 msg = (
@@ -161,17 +162,21 @@ class Monitor:
                     else f"阅读结束，请起身活动 {self.break_duration_seconds // 60} 分钟！"
                 )
 
+                def on_close_callback():
+                    # 只有从弹窗真正关闭时，才唤醒挂起的Monitor后台线程
+                    done_event.set()
+
                 show_reminder_process(
                     message=msg,
                     duration=self.break_duration_seconds,
                     on_rest=self.on_user_start_rest,
                     on_snooze=self.on_user_snooze,
+                    on_close=on_close_callback,
                 )
             except Exception as e:
                 logging.error(f"GUI Error in show_window: {e}", exc_info=True)
                 self.audio.stop()
                 self.reset_work()
-            finally:
                 done_event.set()
 
         if self.gui_queue:
@@ -181,6 +186,7 @@ class Monitor:
         else:
             # 降级：没有 gui_queue 时直接调用（不推荐，调试用）
             show_window()
+            done_event.wait()
 
         # 弹窗关闭后处理状态
         if self.state in ["PROMPT", "BREAK"]:
