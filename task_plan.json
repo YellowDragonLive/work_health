@@ -5,22 +5,22 @@
         {
             "id": "cleanup",
             "description": "删除 testx.txt 违规文件",
-            "status": "pending"
+            "status": "done"
         },
         {
             "id": "refactor_config",
             "description": "优化 config_manager.py 的异常处理",
-            "status": "pending"
+            "status": "done"
         },
         {
             "id": "refactor_main",
             "description": "主程序路径动态化与性能微调",
-            "status": "pending"
+            "status": "done"
         },
         {
             "id": "verify_commit",
             "description": "验证并提交更改",
-            "status": "pending"
+            "status": "done"
         }
     ],
     "decisions": [],
