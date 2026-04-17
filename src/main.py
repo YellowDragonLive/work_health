@@ -208,9 +208,9 @@ def main():
 
     if is_test_mode:
         logging.info("Starting in TEST MODE: 1 min work, 30 sec break/snooze")
-        work_dur = 1
-        break_dur = 30
-        snooze_dur = 30
+        work_dur = 0.1
+        break_dur = 10
+        snooze_dur = 10
 
     if not custom_music:
         # 使用相对路径计算默认音乐位置

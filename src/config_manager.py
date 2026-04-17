@@ -5,6 +5,7 @@ import logging
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_FILE = os.path.join(BASE_DIR, "config.json")
 HEALTH_DATA_FILE = os.path.join(BASE_DIR, "health_data.json")
+JOURNAL_DATA_FILE = os.path.join(BASE_DIR, "journal_data.json")
 
 def load_config():
     if os.path.exists(CONFIG_FILE):
@@ -37,3 +38,21 @@ def save_health_data(data):
             json.dump(data, f, indent=4)
     except Exception as e:
         logging.error(f"Save Health Data Error: {e}")
+
+
+def load_journal_data():
+    if os.path.exists(JOURNAL_DATA_FILE):
+        try:
+            with open(JOURNAL_DATA_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception as e:
+            logging.error(f"Load Journal Data Error: {e}")
+    return {}
+
+
+def save_journal_data(data):
+    try:
+        with open(JOURNAL_DATA_FILE, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=4, ensure_ascii=False)
+    except Exception as e:
+        logging.error(f"Save Journal Data Error: {e}")

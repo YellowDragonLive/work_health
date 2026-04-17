@@ -3,6 +3,7 @@ import ctypes
 import os
 import threading
 import logging
+from datetime import date
 
 # Constants
 IDLE_PAUSE_THRESHOLD = 1200  # 20 minutes without input before pausing
@@ -84,6 +85,9 @@ class Monitor:
         self.work_time_remaining = self.work_duration_minutes * 60
         self.last_sync_time = time.time()
 
+        # 自省问答追踪：当天已展示过的问题 ID
+        self.shown_question_ids = []
+
         self.lock = threading.Lock()
 
     def is_system_locked(self):
@@ -140,6 +144,17 @@ class Monitor:
         self.state = "PROMPT"
         self.audio.play()
 
+        # 挑选一个自省问题
+        current_question = None
+        try:
+            from questions import pick_random_question
+            current_question = pick_random_question(exclude_ids=self.shown_question_ids)
+            if current_question:
+                self.shown_question_ids.append(current_question["id"])
+                logging.info(f"Selected reflection question: {current_question['id']}")
+        except Exception as e:
+            logging.error(f"Error picking question: {e}", exc_info=True)
+
         # 用 Event 等待主线程弹窗关闭
         done_event = threading.Event()
 
@@ -157,9 +172,9 @@ class Monitor:
                     return
 
                 msg = (
-                    f"休息时间到，请起身活动！"
+                    f"请起身活动"
                     if self.break_duration_seconds < 60
-                    else f"阅读结束，请起身活动 {self.break_duration_seconds // 60} 分钟！"
+                    else f"请起身活动 {self.break_duration_seconds // 60} 分钟！"
                 )
 
                 def on_close_callback():
@@ -172,6 +187,8 @@ class Monitor:
                     on_rest=self.on_user_start_rest,
                     on_snooze=self.on_user_snooze,
                     on_close=on_close_callback,
+                    question=current_question,
+                    on_answer=self._save_journal_answer,
                 )
             except Exception as e:
                 logging.error(f"GUI Error in show_window: {e}", exc_info=True)
@@ -192,6 +209,33 @@ class Monitor:
         if self.state in ["PROMPT", "BREAK"]:
             logging.info(f"Window closed in state {self.state}. Resetting to Work.")
             self.reset_work()
+
+    def _save_journal_answer(self, question_id, answer_text):
+        """保存自省问答回答到 journal_data.json。"""
+        try:
+            from config_manager import load_journal_data, save_journal_data
+            from questions import get_question_by_id
+            import time as _time
+
+            today_str = str(date.today())
+            data = load_journal_data()
+
+            if today_str not in data:
+                data[today_str] = {"answers": [], "created_at": _time.strftime("%H:%M:%S")}
+
+            q = get_question_by_id(question_id)
+            entry = {
+                "question_id": question_id,
+                "question_en": q["en"] if q else "",
+                "question_zh": q["zh"] if q else "",
+                "answer": answer_text,
+                "answered_at": _time.strftime("%H:%M:%S"),
+            }
+            data[today_str]["answers"].append(entry)
+            save_journal_data(data)
+            logging.info(f"Journal answer saved: {question_id} at {entry['answered_at']}")
+        except Exception as e:
+            logging.error(f"Failed to save journal answer: {e}", exc_info=True)
 
     def on_user_start_rest(self):
         logging.info("User started rest.")
