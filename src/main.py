@@ -7,9 +7,8 @@ import pystray
 import logging
 from PIL import Image
 from monitor import Monitor
-from config_manager import load_config, save_config, load_health_data
+from config_manager import load_config, save_config, load_health_data, check_today_record_status
 from utils import hide_console, is_autostart_enabled, set_autostart
-from health_view import record_health_data, check_today_record_status
 
 # Configure Logging
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -131,8 +130,12 @@ def set_duration(icon, item):
 
 
 def record_health_data_threaded(icon, item):
-    """在主线程调度健康数据 GUI，避免 Tkinter 跨线程调用。"""
-    gui_queue.put(lambda: record_health_data(icon, item))
+    """在主线程调度整合后的手动录入 GUI。"""
+    from view import show_manual_record
+
+    gui_queue.put(
+        lambda: show_manual_record(on_answer=monitor_app._save_journal_answer)
+    )
 
 
 def toggle_autostart(icon, item):

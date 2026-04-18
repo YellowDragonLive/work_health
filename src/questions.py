@@ -136,6 +136,12 @@ MORNING_QUESTIONS = [
         "en": "What is one thing you would do this week if you were already that person?",
         "zh": "如果你已经是那个人了，这周你会做的一件事是什么？",
     },
+    {
+        "id": "m15",
+        "section": "觉察真相",
+        "en": "What is the most obvious truth about your life that you are currently putting the most energy into avoiding?",
+        "zh": "关于你的生活，你目前正投入最大精力去逃避的、最显而易见的真相是什么？",
+    },
 ]
 
 
@@ -203,6 +209,20 @@ DAYTIME_QUESTIONS = [
               "that I could be tomorrow?",
         "zh": "明天我能成为的、我想要成为的那个人的最小版本是什么？",
     },
+    {
+        "id": "d10",
+        "time": None,
+        "en": "Is the problem you’re trying to solve a real blockage, or a "
+              "distraction you’ve created to 'feel useful' without making progress?",
+        "zh": "你试图解决的问题是真正的障碍，还是你为了让自己看起来“有用”而创造的借口？",
+    },
+    {
+        "id": "d11",
+        "time": None,
+        "en": "If you had to live this exact day again for the next 100 days, "
+              "would it be a heaven of progress or a hell of stagnation?",
+        "zh": "如果你必须在接下来的 100 天内重复过这完全相同的一天，这会是进步的天堂还是停滞的地狱？",
+    },
 ]
 
 
@@ -269,10 +289,96 @@ EVENING_QUESTIONS = [
 
 
 # ============================================================
-# 工具函数
+# 人生游戏综述 (Synthesis — The Life Game)
+# ============================================================
+
+SYNTHESIS_QUESTIONS = [
+    {
+        "id": "s1",
+        "section": "反愿景 (Anti-Vision)",
+        "game_role": "危险/敌方设定",
+        "icon": "💀",
+        "zh": "描述你绝不想过上的那种生活。",
+    },
+    {
+        "id": "s2",
+        "section": "愿景 (Vision)",
+        "game_role": "最终胜利目标",
+        "icon": "🌟",
+        "zh": "在你不考虑现实限制的情况下，理想的一天是什么样的？",
+    },
+    {
+        "id": "s3",
+        "section": "1年目标 (1 Year)",
+        "game_role": "当前关卡任务",
+        "icon": "🚩",
+        "zh": "一年后，哪一个具体的成就能代表你打破了旧模式？",
+    },
+    {
+        "id": "s4",
+        "section": "1月项目 (1 Month)",
+        "game_role": "BOSS 战",
+        "icon": "⚔️",
+        "zh": "本月你要集中攻克的技能、学习或构建的任务是什么？",
+    },
+    {
+        "id": "s5",
+        "section": "每日杠杆 (Levers)",
+        "game_role": "每日任务/日常",
+        "icon": "⚡",
+        "zh": "哪 2-3 个核心行动能最快推进你的月度项目和年目标？",
+    },
+    {
+        "id": "s6",
+        "section": "规则限制 (Constraints)",
+        "game_role": "游戏规则/物理边界",
+        "icon": "🧱",
+        "zh": "为了达成愿景，你绝对不愿牺牲的原则或底线是什么？",
+    },
+]
+
+QUOTES = [
+    {"zh": "真正的智能是你能如愿以偿地过上自己想要的生活。", "source": "Naval Ravikant"},
+    {"zh": "如果你不为自己设定目标，你就会沦为别人达成目标的工具。", "source": "Dan Koe"},
+    {"zh": "反愿景比愿景更有力量，因为痛苦是比快乐更强的原动力。", "source": "Dan Koe"},
+    {"zh": "专注是拒绝一千个好主意，只为一个伟大的主意留出空间。", "source": "Steve Jobs"},
+    {"zh": "你的每一个行动都是在为你未来想成为的那个人投票。", "source": "James Clear"},
+    {"zh": "如果一件事情你无法想象自己坚持做 10 年，那就连 10 分钟都不要去碰。", "source": "Naval Ravikant"},
+]
+
+
+# ============================================================
+# 数据交互与检索函数
 # ============================================================
 
 ALL_QUESTIONS = MORNING_QUESTIONS + DAYTIME_QUESTIONS + EVENING_QUESTIONS
+
+
+def get_latest_synthesis_answers():
+    """获取人生游戏 6 组件的最新回答（从自省记录中提取）。"""
+    from config_manager import load_journal_data
+    try:
+        data = load_journal_data()
+        all_answers = {}
+        # 遍历所有日期的回答，获取 s1-s6 每个问题的最后一次有效输入
+        for date_str in sorted(data.keys(), reverse=True):
+            day_answers = data[date_str].get("answers", [])
+            for ans in day_answers:
+                q_id = ans.get("question_id")
+                if q_id.startswith("s") and q_id not in all_answers:
+                    all_answers[q_id] = ans.get("answer")
+            
+            # 如果 6 个都已经找全了，提前结束
+            if len(all_answers) >= 6:
+                break
+        return all_answers
+    except Exception:
+        return {}
+
+
+def pick_random_quote():
+    """随机返回一个启发金句。"""
+    return random.choice(QUOTES)
 
 
 def get_phase_by_time(hour=None):

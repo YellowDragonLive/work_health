@@ -1,6 +1,7 @@
 import os
 import json
 import logging
+from datetime import date
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_FILE = os.path.join(BASE_DIR, "config.json")
@@ -56,3 +57,9 @@ def save_journal_data(data):
             json.dump(data, f, indent=4, ensure_ascii=False)
     except Exception as e:
         logging.error(f"Save Journal Data Error: {e}")
+
+def check_today_record_status():
+    """Checks if there's any health data entry for today."""
+    today_str = str(date.today())
+    data = load_health_data()
+    return " (已填)" if today_str in data else " (未填!)"
