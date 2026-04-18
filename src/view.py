@@ -27,7 +27,7 @@ def show_manual_record(on_answer=None):
     global _active_window
     if _active_window:
         _active_window.force_close()
-        
+
     # Create a dummy question for manual entry
     question = {
         "id": "manual_entry_" + str(int(time.time())),
@@ -53,6 +53,168 @@ def close_active_window():
         _active_window = None
 
 
+# ============================================================
+# 设计系统 — Midnight Aurora 主题
+# ============================================================
+
+class _C:
+    """Color Tokens — 统一配色令牌"""
+    # 背景层级（深 → 浅）
+    BG_VOID    = "#080c14"      # 最深：窗口底色
+    BG_BASE    = "#0f1724"      # 主区域
+    BG_SURFACE = "#172033"      # 卡片/面板
+    BG_OVERLAY = "#1e293b"      # 浮层/输入框
+    BG_HOVER   = "#283548"      # hover 态
+
+    # 边框
+    BORDER      = "#2a3650"
+    BORDER_GLOW = "#2d5a9e"     # 蓝辉边框
+
+    # 强调色
+    AMBER  = "#f59e0b"
+    BLUE   = "#3b82f6"
+    CYAN   = "#06b6d4"
+    GREEN  = "#10b981"
+    RED    = "#ef4444"
+    PURPLE = "#8b5cf6"
+
+    # 强调色梯度
+    GREEN_DEEP  = "#047857"
+    GREEN_LIGHT = "#34d399"
+    AMBER_DEEP  = "#b45309"
+    AMBER_LIGHT = "#fbbf24"
+    BLUE_LIGHT  = "#60a5fa"
+
+    # 文字
+    FG       = "#e2e8f0"
+    FG_DIM   = "#94a3b8"
+    FG_MUTED = "#475569"
+    FG_LINK  = "#60a5fa"
+
+
+class _F:
+    """Font Tokens — 字体令牌"""
+    HERO     = ("Segoe UI", 28, "bold")
+    H1       = ("Microsoft YaHei UI", 22, "bold")
+    H2       = ("Microsoft YaHei UI", 16, "bold")
+    H3       = ("Microsoft YaHei UI", 13, "bold")
+    BODY     = ("Microsoft YaHei UI", 12)
+    BODY_LG  = ("Microsoft YaHei UI", 14)
+    EN_TITLE = ("Segoe UI", 17, "bold italic")
+    EN_BODY  = ("Segoe UI", 13, "italic")
+    SMALL    = ("Microsoft YaHei UI", 10)
+    TINY     = ("Microsoft YaHei UI", 9)
+    TIMER    = ("Consolas", 36, "bold")
+    BTN      = ("Microsoft YaHei UI", 14, "bold")
+    BTN_SM   = ("Microsoft YaHei UI", 12)
+    MONO     = ("Consolas", 13)
+
+
+# ============================================================
+# UI 辅助组件
+# ============================================================
+
+def _hover(widget, normal_bg, hover_bg):
+    """给任意 widget 绑定鼠标 hover 颜色过渡。"""
+    widget.bind("<Enter>", lambda e: widget.config(bg=hover_bg))
+    widget.bind("<Leave>", lambda e: widget.config(bg=normal_bg))
+
+
+def _make_button(parent, text, command, bg, hover_bg, fg="white",
+                 font=_F.BTN, padx=36, pady=14, **kw):
+    """创建带 hover 效果的扁平按钮。"""
+    btn = tk.Button(
+        parent, text=text, command=command,
+        font=font, bg=bg, fg=fg,
+        activebackground=hover_bg, activeforeground=fg,
+        relief="flat", bd=0, padx=padx, pady=pady,
+        cursor="hand2", **kw,
+    )
+    _hover(btn, bg, hover_bg)
+    return btn
+
+
+def _separator(parent, color=_C.BORDER, height=1, **pack_kw):
+    """水平分隔线。"""
+    sep = tk.Frame(parent, bg=color, height=height)
+    sep.pack(fill=tk.X, **pack_kw)
+    return sep
+
+
+def _accent_bar(parent, color=_C.AMBER, height=2, **pack_kw):
+    """装饰性的顶部/底部强调色条。"""
+    bar = tk.Frame(parent, bg=color, height=height)
+    bar.pack(fill=tk.X, **pack_kw)
+    return bar
+
+
+class _CircleTimer:
+    """环形倒计时进度条组件（基于 Canvas Arc）。"""
+
+    def __init__(self, parent, size=200, line_w=5, bg=_C.BG_VOID):
+        self.size = size
+        self.lw = line_w
+
+        self.canvas = tk.Canvas(
+            parent, width=size, height=size,
+            bg=bg, highlightthickness=0,
+        )
+
+        pad = line_w + 8
+        # 背景轨道（暗色圆环）
+        self.canvas.create_oval(
+            pad, pad, size - pad, size - pad,
+            outline=_C.BORDER, width=line_w,
+        )
+        # 前景弧（活跃进度）
+        self.arc = self.canvas.create_arc(
+            pad, pad, size - pad, size - pad,
+            start=90, extent=-360,
+            outline=_C.CYAN, width=line_w, style=tk.ARC,
+        )
+        # 中央数字
+        self.time_id = self.canvas.create_text(
+            size // 2, size // 2 - 8,
+            text="00:00", fill=_C.FG,
+            font=_F.TIMER,
+        )
+        # "剩余" 标签
+        self.label_id = self.canvas.create_text(
+            size // 2, size // 2 + 28,
+            text="剩 余", fill=_C.FG_DIM,
+            font=_F.SMALL,
+        )
+
+    def update(self, remaining, total):
+        """刷新进度弧和数字。"""
+        if total <= 0:
+            return
+        ratio = remaining / total
+        self.canvas.itemconfig(self.arc, extent=-360 * ratio)
+
+        mins, secs = divmod(remaining, 60)
+        self.canvas.itemconfig(self.time_id, text=f"{mins:02d}:{secs:02d}")
+
+        # 颜色随剩余比例渐变
+        if ratio > 0.5:
+            color = _C.CYAN
+        elif ratio > 0.2:
+            color = _C.AMBER
+        else:
+            color = _C.RED
+        self.canvas.itemconfig(self.arc, outline=color)
+
+    def pack(self, **kw):
+        self.canvas.pack(**kw)
+
+    def destroy(self):
+        self.canvas.destroy()
+
+
+# ============================================================
+# 主窗口
+# ============================================================
+
 class ReminderWindow:
     def __init__(self, message, duration_seconds, on_start_rest, on_snooze, on_close,
                  question=None, on_answer=None):
@@ -68,11 +230,12 @@ class ReminderWindow:
         self.timer_id = None
         self.hide_timer_id = None
         self.is_closed = False
+        self._circle_timer = None
+        self._total_duration = duration_seconds
 
     def show(self):
         try:
             import main as _main
-
             parent = _main.tk_root
         except Exception:
             parent = None
@@ -82,64 +245,57 @@ class ReminderWindow:
         self.root.protocol("WM_DELETE_WINDOW", self.force_close)
 
         self.root.attributes("-topmost", True)
-        self.root.attributes("-alpha", 0.95)
+        self.root.attributes("-alpha", 0.96)
         self.root.attributes("-fullscreen", True)
-        self.root.configure(bg="#2c3e50")
+        self.root.configure(bg=_C.BG_VOID)
 
-        self.main_container = tk.Frame(self.root, bg="#2c3e50")
+        # ── 顶部琥珀金装饰线 ──
+        _accent_bar(self.root, _C.AMBER, height=3)
+
+        # ── 主容器 ──
+        self.main_container = tk.Frame(self.root, bg=_C.BG_VOID)
         self.main_container.place(relx=0.5, rely=0.5, anchor=tk.CENTER)
 
+        # ── 标题 ──
         self.lbl_msg = tk.Label(
             self.main_container,
             text=self.message,
-            font=("Microsoft YaHei UI", 32, "bold"),
-            fg="white",
-            bg="#2c3e50",
+            font=_F.HERO,
+            fg=_C.FG,
+            bg=_C.BG_VOID,
             wraplength=800,
         )
-        self.lbl_msg.pack(pady=60)
+        self.lbl_msg.pack(pady=(40, 50))
 
-        self.frame_btns = tk.Frame(self.main_container, bg="#2c3e50")
+        # ── 按钮组 ──
+        self.frame_btns = tk.Frame(self.main_container, bg=_C.BG_VOID)
         self.frame_btns.pack(pady=20)
 
-        self.btn_rest = tk.Button(
+        self.btn_rest = _make_button(
             self.frame_btns,
-            text="开始休息 (Start Break)",
-            command=self._handle_start_rest,
-            font=("Microsoft YaHei UI", 18, "bold"),
-            bg="#27ae60",
-            fg="white",
-            relief="flat",
-            padx=40,
-            pady=20,
+            "🧘  开始休息",
+            self._handle_start_rest,
+            bg=_C.GREEN_DEEP, hover_bg=_C.GREEN,
         )
-        self.btn_rest.pack(side=tk.LEFT, padx=30)
+        self.btn_rest.pack(side=tk.LEFT, padx=20)
 
-        self.btn_snooze = tk.Button(
+        self.btn_snooze = _make_button(
             self.frame_btns,
-            text="推迟 5 分钟",
-            command=self._handle_snooze,
-            font=("Microsoft YaHei UI", 18, "bold"),
-            bg="#e67e22",
-            fg="white",
-            relief="flat",
-            padx=40,
-            pady=20,
+            "⏰  推迟 5 分钟",
+            self._handle_snooze,
+            bg=_C.AMBER_DEEP, hover_bg=_C.AMBER,
         )
-        self.btn_snooze.pack(side=tk.LEFT, padx=30)
+        self.btn_snooze.pack(side=tk.LEFT, padx=20)
 
-        self.btn_hide = tk.Button(
+        # ── 隐藏按钮 ──
+        self.btn_hide = _make_button(
             self.main_container,
-            text="处理其他事务 (暂时隐藏 15 秒) [Esc]",
-            command=self._handle_hide,
-            font=("Microsoft YaHei UI", 12),
-            bg="#7f8c8d",
-            fg="white",
-            relief="flat",
-            padx=20,
-            pady=10,
+            "处理其他事务 · 暂时隐藏 15 秒  [Esc]",
+            self._handle_hide,
+            bg=_C.BG_OVERLAY, hover_bg=_C.BG_HOVER,
+            fg=_C.FG_DIM, font=_F.BTN_SM, padx=24, pady=10,
         )
-        self.btn_hide.pack(pady=40)
+        self.btn_hide.pack(pady=(40, 0))
 
         self.root.bind("<Escape>", lambda e: self._handle_hide())
 
@@ -162,23 +318,21 @@ class ReminderWindow:
         self.frame_btns.pack_forget()
 
         # 缩小标题，为三栏让出空间
-        self.lbl_msg.config(
-            font=("Microsoft YaHei UI", 22, "bold"),
-        )
-        self.lbl_msg.pack_configure(pady=20)
+        self.lbl_msg.config(font=_F.H1)
+        self.lbl_msg.pack_configure(pady=(10, 15))
 
         # ============================================================
         # 构建三栏容器（贯穿休息+回答全流程）
         # ============================================================
-        self.three_col_frame = tk.Frame(self.main_container, bg="#2c3e50")
-        self.three_col_frame.pack(fill=tk.BOTH, expand=True, padx=40, pady=10)
+        self.three_col_frame = tk.Frame(self.main_container, bg=_C.BG_VOID)
+        self.three_col_frame.pack(fill=tk.BOTH, expand=True, padx=30, pady=10)
 
         # --- 左栏：Tip 面板 ---
         self._build_tip_panel(self.three_col_frame)
 
         # --- 中栏：问题 + 倒计时（稍后会切换为回答输入） ---
-        self.center_frame = tk.Frame(self.three_col_frame, bg="#2c3e50")
-        self.center_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 15))
+        self.center_frame = tk.Frame(self.three_col_frame, bg=_C.BG_VOID)
+        self.center_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 12))
 
         self._build_center_question()
 
@@ -190,17 +344,24 @@ class ReminderWindow:
     # ================================================================
     def _build_tip_panel(self, parent):
         """构建左侧 Tip 面板。六组件使用 placeholder 逻辑。"""
-        left_tip = tk.Frame(parent, bg="#1a252f", padx=20, pady=20, width=320)
-        left_tip.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 15))
+        # 外壳做 1px 微光边框
+        wrapper = tk.Frame(parent, bg=_C.BORDER, padx=1, pady=1)
+        wrapper.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 12))
+
+        left_tip = tk.Frame(wrapper, bg=_C.BG_SURFACE, padx=22, pady=20, width=330)
+        left_tip.pack(fill=tk.BOTH, expand=True)
         left_tip.pack_propagate(False)
+
+        # 顶部琥珀装饰线
+        _accent_bar(left_tip, _C.AMBER, height=2, pady=(0, 12))
 
         tk.Label(
             left_tip,
             text="🎮 人生游戏面板",
-            font=("Microsoft YaHei UI", 14, "bold"),
-            fg="#f1c40f",
-            bg="#1a252f",
-        ).pack(anchor=tk.W, pady=(0, 15))
+            font=_F.H3,
+            fg=_C.AMBER,
+            bg=_C.BG_SURFACE,
+        ).pack(anchor=tk.W, pady=(0, 12))
 
         # 加载六组件数据
         try:
@@ -219,47 +380,47 @@ class ReminderWindow:
             answer = synthesis_answers.get(sq["id"], "")
 
             # 标题行
-            header_frame = tk.Frame(left_tip, bg="#1a252f")
+            header_frame = tk.Frame(left_tip, bg=_C.BG_SURFACE)
             header_frame.pack(fill=tk.X, pady=(8, 2))
 
             tk.Label(
                 header_frame,
                 text=f"{icon} {section}",
-                font=("Microsoft YaHei UI", 10, "bold"),
-                fg="#3498db",
-                bg="#1a252f",
+                font=_F.SMALL,
+                fg=_C.BLUE_LIGHT,
+                bg=_C.BG_SURFACE,
             ).pack(side=tk.LEFT)
 
             tk.Label(
                 header_frame,
                 text=game_role,
-                font=("Microsoft YaHei UI", 8),
-                fg="#7f8c8d",
-                bg="#1a252f",
+                font=_F.TINY,
+                fg=_C.FG_MUTED,
+                bg=_C.BG_SURFACE,
             ).pack(side=tk.RIGHT)
 
             # 内容：有回答则正常展示，无回答则灰色 placeholder
             if answer:
                 display_text = answer[:60] + "…" if len(answer) > 60 else answer
-                text_color = "#ecf0f1"
+                text_color = _C.FG
             else:
                 # placeholder：灰色引导文字
                 display_text = sq.get("zh", "")[:35] + "…"
-                text_color = "#555e66"
+                text_color = _C.FG_MUTED
 
             tk.Label(
                 left_tip,
                 text=display_text,
-                font=("Microsoft YaHei UI", 9),
+                font=_F.TINY,
                 fg=text_color,
-                bg="#1a252f",
-                wraplength=270,
+                bg=_C.BG_SURFACE,
+                wraplength=280,
                 justify=tk.LEFT,
                 anchor=tk.W,
-            ).pack(fill=tk.X, padx=(18, 0), pady=(0, 2))
+            ).pack(fill=tk.X, padx=(20, 0), pady=(0, 2))
 
         # 分隔线
-        tk.Frame(left_tip, bg="#34495e", height=1).pack(fill=tk.X, pady=15)
+        _separator(left_tip, _C.BORDER, pady=12)
 
         # 随机深度金句
         try:
@@ -268,67 +429,87 @@ class ReminderWindow:
                 left_tip,
                 text="💡 灵感触发",
                 font=("Microsoft YaHei UI", 10, "bold"),
-                fg="#e67e22",
-                bg="#1a252f",
-            ).pack(anchor=tk.W, pady=(0, 8))
+                fg=_C.AMBER,
+                bg=_C.BG_SURFACE,
+            ).pack(anchor=tk.W, pady=(0, 6))
 
             tk.Label(
                 left_tip,
-                text="\u300c" + quote['zh'] + "\u300d",
+                text="「" + quote['zh'] + "」",
                 font=("Microsoft YaHei UI", 9, "italic"),
-                fg="#bdc3c7",
-                bg="#1a252f",
-                wraplength=270,
+                fg=_C.FG_DIM,
+                bg=_C.BG_SURFACE,
+                wraplength=280,
                 justify=tk.LEFT,
             ).pack(fill=tk.X, pady=(0, 4))
 
             tk.Label(
                 left_tip,
                 text=f"— {quote['source']}",
-                font=("Microsoft YaHei UI", 8),
-                fg="#7f8c8d",
-                bg="#1a252f",
+                font=_F.TINY,
+                fg=_C.FG_MUTED,
+                bg=_C.BG_SURFACE,
             ).pack(anchor=tk.E)
         except Exception:
             pass
 
     # ================================================================
-    # 中栏 Phase 1：问题展示 + 倒计时
+    # 中栏 Phase 1：问题展示 + 环形倒计时
     # ================================================================
     def _build_center_question(self):
         """在中栏展示自省问题和倒计时。"""
         if self.question:
-            # 问题卡片
-            q_card = tk.Frame(self.center_frame, bg="#34495e", padx=30, pady=25)
-            q_card.pack(fill=tk.X, pady=(0, 20))
+            # 问题卡片（带微光边框）
+            card_wrapper = tk.Frame(self.center_frame, bg=_C.BORDER, padx=1, pady=1)
+            card_wrapper.pack(fill=tk.X, pady=(0, 20))
+
+            q_card = tk.Frame(card_wrapper, bg=_C.BG_SURFACE, padx=30, pady=25)
+            q_card.pack(fill=tk.BOTH)
 
             tk.Label(
                 q_card,
-                text="💭 此刻思考 — Reflect on this",
-                font=("Microsoft YaHei UI", 14, "bold"),
-                fg="#f39c12",
-                bg="#34495e",
-            ).pack(pady=(0, 15))
+                text="💭 此刻思考",
+                font=_F.H3,
+                fg=_C.AMBER,
+                bg=_C.BG_SURFACE,
+            ).pack(anchor=tk.W, pady=(0, 12))
 
+            # 英文：带左侧蓝色装饰线
+            en_frame = tk.Frame(q_card, bg=_C.BG_SURFACE)
+            en_frame.pack(fill=tk.X, pady=(0, 10))
+
+            tk.Frame(en_frame, bg=_C.BLUE, width=3).pack(
+                side=tk.LEFT, fill=tk.Y, padx=(0, 14),
+            )
             tk.Label(
-                q_card,
+                en_frame,
                 text=self.question["en"],
-                font=("Segoe UI", 18, "italic", "bold"),
-                fg="#ecf0f1",
-                bg="#34495e",
-                wraplength=700,
-                justify=tk.CENTER,
-            ).pack(pady=(0, 10), anchor=tk.CENTER)
+                font=_F.EN_TITLE,
+                fg=_C.FG,
+                bg=_C.BG_SURFACE,
+                wraplength=620,
+                justify=tk.LEFT,
+                anchor=tk.W,
+            ).pack(side=tk.LEFT, fill=tk.X, expand=True)
 
+            # 中文
             tk.Label(
                 q_card,
                 text=self.question["zh"],
-                font=("Microsoft YaHei UI", 16, "bold"),
-                fg="#bdc3c7",
-                bg="#34495e",
-                wraplength=700,
-                justify=tk.CENTER,
-            ).pack(pady=(0, 5), anchor=tk.CENTER)
+                font=_F.H2,
+                fg=_C.FG_DIM,
+                bg=_C.BG_SURFACE,
+                wraplength=650,
+                justify=tk.LEFT,
+                anchor=tk.W,
+            ).pack(fill=tk.X, pady=(0, 5))
+
+        # 环形进度条（仅在有倒计时时显示）
+        if self.duration_seconds > 0:
+            self._circle_timer = _CircleTimer(
+                self.center_frame, size=200, line_w=5, bg=_C.BG_VOID,
+            )
+            self._circle_timer.pack(pady=20)
 
         self._start_countdown(self.duration_seconds)
 
@@ -337,27 +518,43 @@ class ReminderWindow:
     # ================================================================
     def _build_health_panel(self, parent):
         """构建右侧生理指标面板。"""
-        right_sidebar = tk.Frame(parent, bg="#34495e", padx=25, pady=25, width=300)
-        right_sidebar.pack(side=tk.RIGHT, fill=tk.Y)
+        # 外壳做 1px 边框
+        wrapper = tk.Frame(parent, bg=_C.BORDER, padx=1, pady=1)
+        wrapper.pack(side=tk.RIGHT, fill=tk.Y)
+
+        right_sidebar = tk.Frame(wrapper, bg=_C.BG_SURFACE, padx=25, pady=25, width=300)
+        right_sidebar.pack(fill=tk.BOTH, expand=True)
         right_sidebar.pack_propagate(False)
+
+        # 顶部青蓝装饰线
+        _accent_bar(right_sidebar, _C.CYAN, height=2, pady=(0, 12))
 
         tk.Label(
             right_sidebar,
             text="📊 身体状态",
-            font=("Microsoft YaHei UI", 14, "bold"),
-            fg="#3498db",
-            bg="#34495e",
+            font=_F.H3,
+            fg=_C.CYAN,
+            bg=_C.BG_SURFACE,
         ).pack(anchor=tk.W, pady=(0, 20))
 
         def create_entry_row(panel, label, placeholder=""):
             """创建带 placeholder 的输入行。"""
-            row = tk.Frame(panel, bg="#34495e")
+            row = tk.Frame(panel, bg=_C.BG_SURFACE)
             row.pack(fill=tk.X, pady=10)
-            tk.Label(row, text=label, font=("Microsoft YaHei UI", 11),
-                     fg="#ecf0f1", bg="#34495e").pack(side=tk.LEFT)
-            ent = tk.Entry(row, font=("Segoe UI", 12, "bold"), width=8, bg="#2c3e50",
-                           fg="#2ecc71", insertbackground="white", relief="flat", justify=tk.CENTER)
-            ent.pack(side=tk.RIGHT)
+            tk.Label(
+                row, text=label, font=_F.BODY,
+                fg=_C.FG, bg=_C.BG_SURFACE,
+            ).pack(side=tk.LEFT)
+            ent = tk.Entry(
+                row, font=_F.MONO, width=8,
+                bg=_C.BG_OVERLAY, fg=_C.GREEN,
+                insertbackground=_C.FG, relief="flat",
+                justify=tk.CENTER, bd=0,
+                highlightthickness=1,
+                highlightbackground=_C.BORDER,
+                highlightcolor=_C.BLUE,
+            )
+            ent.pack(side=tk.RIGHT, ipady=4)
 
             # placeholder 逻辑
             ent._placeholder = str(placeholder)
@@ -367,12 +564,12 @@ class ReminderWindow:
                 if not ent.get() and ent._placeholder:
                     ent._is_placeholder = True
                     ent.insert(0, ent._placeholder)
-                    ent.config(fg="#7f8c8d")
+                    ent.config(fg=_C.FG_MUTED)
 
             def _on_focus_in(e):
                 if ent._is_placeholder:
                     ent.delete(0, tk.END)
-                    ent.config(fg="#2ecc71")
+                    ent.config(fg=_C.GREEN)
                     ent._is_placeholder = False
 
             def _on_focus_out(e):
@@ -381,7 +578,7 @@ class ReminderWindow:
             def _on_key(e):
                 if ent._is_placeholder:
                     ent.delete(0, tk.END)
-                    ent.config(fg="#2ecc71")
+                    ent.config(fg=_C.GREEN)
                     ent._is_placeholder = False
                 self._health_dirty = True
 
@@ -425,16 +622,16 @@ class ReminderWindow:
             if val:
                 ent._is_placeholder = True
                 ent.insert(0, val)
-                ent.config(fg="#7f8c8d")
+                ent.config(fg=_C.FG_MUTED)
 
         tk.Label(
             right_sidebar,
             text="💡 每次休息记录的数据都会被累送并计算平均值",
-            font=("Microsoft YaHei UI", 9),
-            fg="#7f8c8d",
-            bg="#34495e",
-            wraplength=200,
-            justify=tk.LEFT
+            font=_F.TINY,
+            fg=_C.FG_MUTED,
+            bg=_C.BG_SURFACE,
+            wraplength=220,
+            justify=tk.LEFT,
         ).pack(side=tk.BOTTOM, pady=10)
 
     # ================================================================
@@ -446,68 +643,62 @@ class ReminderWindow:
             self.force_close()
             return
 
-
         self.lbl_msg.config(
             text="休息结束！请写下你的思考 ✍️",
-            font=("Microsoft YaHei UI", 22, "bold"),
-            fg="#2ecc71",
+            font=_F.H1,
+            fg=_C.GREEN,
         )
 
         # 清空中栏（移除问题卡片和倒计时）
         for w in self.center_frame.winfo_children():
             w.destroy()
+        self._circle_timer = None
 
         # 回答输入区
         tk.Label(
             self.center_frame,
             text="你的回答 (Your Reflection):",
-            font=("Microsoft YaHei UI", 12),
-            fg="#95a5a6",
-            bg="#2c3e50",
+            font=_F.BODY,
+            fg=_C.FG_DIM,
+            bg=_C.BG_VOID,
         ).pack(anchor=tk.W, pady=(0, 8))
 
         self.text_answer = tk.Text(
             self.center_frame,
-            font=("Microsoft YaHei UI", 13),
-            bg="#34495e",
-            fg="#ecf0f1",
-            insertbackground="#ecf0f1",
+            font=_F.BODY_LG,
+            bg=_C.BG_OVERLAY,
+            fg=_C.FG,
+            insertbackground=_C.FG,
             relief="flat",
             height=8,
             wrap=tk.WORD,
-            padx=15,
-            pady=10,
+            padx=16,
+            pady=12,
+            highlightthickness=1,
+            highlightbackground=_C.BORDER,
+            highlightcolor=_C.BLUE,
         )
         self.text_answer.pack(fill=tk.BOTH, expand=True, pady=(0, 15))
         self.text_answer.focus_set()
 
         # 按钮区
-        btn_frame = tk.Frame(self.center_frame, bg="#2c3e50")
+        btn_frame = tk.Frame(self.center_frame, bg=_C.BG_VOID)
         btn_frame.pack(pady=10)
 
-        tk.Button(
+        _make_button(
             btn_frame,
-            text="提交回答 (Submit)",
-            command=self._submit_answer,
-            font=("Microsoft YaHei UI", 14, "bold"),
-            bg="#27ae60",
-            fg="white",
-            relief="flat",
-            padx=30,
-            pady=12,
-        ).pack(side=tk.LEFT, padx=15)
+            "✅  提交回答",
+            self._submit_answer,
+            bg=_C.GREEN_DEEP, hover_bg=_C.GREEN,
+        ).pack(side=tk.LEFT, padx=12)
 
-        tk.Button(
+        _make_button(
             btn_frame,
-            text="跳过 (Skip)",
-            command=self.force_close,
-            font=("Microsoft YaHei UI", 14),
-            bg="#7f8c8d",
-            fg="white",
-            relief="flat",
-            padx=30,
-            pady=12,
-        ).pack(side=tk.LEFT, padx=15)
+            "跳过",
+            self.force_close,
+            bg=_C.BG_OVERLAY, hover_bg=_C.BG_HOVER,
+            fg=_C.FG_DIM, font=_F.BTN_SM,
+        ).pack(side=tk.LEFT, padx=12)
 
         # 快捷键
         self.text_answer.bind("<Control-Return>", lambda e: self._submit_answer())
@@ -519,7 +710,7 @@ class ReminderWindow:
             return
 
         answer_text = self.text_answer.get("1.0", tk.END).strip()
-        
+
         # 提取健康数据 — 仅在用户主动修改过时保存
         def _get_real_value(entry):
             """获取输入框的真实值（排除 placeholder）。"""
@@ -531,17 +722,17 @@ class ReminderWindow:
         bp_high = _get_real_value(self.entry_bp_high)
         bp_low = _get_real_value(self.entry_bp_low)
         heart_rate_raw = _get_real_value(self.entry_heart_rate)
-        
+
         if getattr(self, '_health_dirty', False) and weight_raw:
             try:
                 weight = float(weight_raw)
                 all_health = load_health_data()
                 today_str = str(date.today())
-                
+
                 # 获取今日记录列表并处理旧格式兼容
                 today_records = all_health.get(today_str, [])
                 if isinstance(today_records, dict): today_records = [today_records]
-                
+
                 # 追加新记录
                 new_record = {
                     "weight": weight,
@@ -552,7 +743,7 @@ class ReminderWindow:
                 }
                 today_records.append(new_record)
                 all_health[today_str] = today_records
-                
+
                 save_health_data(all_health)
                 logging.info(f"Appended health data to history. Total count today: {len(today_records)}")
             except ValueError:
@@ -603,6 +794,11 @@ class ReminderWindow:
             self._show_answer_input()
             return
 
+        # 更新环形进度条
+        if self._circle_timer:
+            self._circle_timer.update(remaining, self._total_duration)
+
+        # 同时更新标题文字
         mins, secs = divmod(remaining, 60)
         time_str = f"{mins:02d}:{secs:02d}"
         self.lbl_msg.config(text=f"休息时间 (剩余 {time_str}) 🧘")
