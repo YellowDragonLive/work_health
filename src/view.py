@@ -141,14 +141,6 @@ class ReminderWindow:
         )
         self.btn_hide.pack(pady=40)
 
-        self.lbl_timer = tk.Label(
-            self.main_container,
-            text="",
-            font=("Segoe UI", 80, "bold"),
-            fg="#e74c3c",
-            bg="#2c3e50",
-        )
-
         self.root.bind("<Escape>", lambda e: self._handle_hide())
 
         self.root.lift()
@@ -338,10 +330,6 @@ class ReminderWindow:
                 justify=tk.CENTER,
             ).pack(pady=(0, 5), anchor=tk.CENTER)
 
-        # 倒计时嵌入中栏
-        self.lbl_timer.config(font=("Segoe UI", 64, "bold"))
-        self.lbl_timer.pack(in_=self.center_frame, pady=20)
-
         self._start_countdown(self.duration_seconds)
 
     # ================================================================
@@ -458,8 +446,6 @@ class ReminderWindow:
             self.force_close()
             return
 
-        # 隐藏倒计时
-        self.lbl_timer.pack_forget()
 
         self.lbl_msg.config(
             text="休息结束！请写下你的思考 ✍️",
@@ -619,7 +605,6 @@ class ReminderWindow:
 
         mins, secs = divmod(remaining, 60)
         time_str = f"{mins:02d}:{secs:02d}"
-        self.lbl_timer.config(text=time_str)
         self.lbl_msg.config(text=f"休息时间 (剩余 {time_str}) 🧘")
 
         self._cancel_timer("timer_id")
