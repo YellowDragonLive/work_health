@@ -12,7 +12,7 @@ from ui_right import RightHealthPanel
 
 class ReminderWindow:
     def __init__(self, message, duration_seconds, on_start_rest, on_snooze, on_close,
-                 question=None, on_answer=None):
+                 question=None, on_answer=None, mode_name="default"):
         self.message = message
         self.duration_seconds = duration_seconds
         self.on_start_rest = on_start_rest
@@ -20,6 +20,7 @@ class ReminderWindow:
         self.on_close = on_close
         self.question = question
         self.on_answer = on_answer
+        self.mode_name = mode_name
 
         self.root = None
         self.timer_id = None
@@ -92,7 +93,7 @@ class ReminderWindow:
         self.three_col_frame.pack(fill=tk.BOTH, expand=True, padx=30, pady=10)
 
         # --- 三栏模块化加载 ---
-        LeftTipPanel(self.three_col_frame)
+        LeftTipPanel(self.three_col_frame, mode_name=self.mode_name)
         
         self.center_frame = tk.Frame(self.three_col_frame, bg=_C.BG_VOID)
         self.center_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 12))

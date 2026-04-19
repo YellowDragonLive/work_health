@@ -5,7 +5,7 @@ from questions import SYNTHESIS_QUESTIONS, get_latest_synthesis_answers, pick_ra
 
 class LeftTipPanel:
     """人生游戏面板 (左侧栏)"""
-    def __init__(self, parent):
+    def __init__(self, parent, mode_name="default"):
         # 外壳做 1px 微光边框
         self.wrapper = tk.Frame(parent, bg=_C.BORDER, padx=1, pady=1)
         self.wrapper.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 12))
@@ -23,7 +23,27 @@ class LeftTipPanel:
             font=_F.H3,
             fg=_C.AMBER,
             bg=_C.BG_SURFACE,
-        ).pack(anchor=tk.W, pady=(0, 12))
+        ).pack(anchor=tk.W, pady=(0, 4))
+        
+        # 模式指示器 (Badge)
+        if mode_name == "morning_routine":
+            badge_frame = tk.Frame(self.container, bg=_C.AMBER_DEEP, padx=8, pady=2)
+            badge_frame.pack(anchor=tk.W, pady=(0, 12))
+            tk.Label(
+                badge_frame,
+                text="🌞 晨间冲刺模式 (10/5)",
+                font=_F.TINY,
+                fg=_C.FG,
+                bg=_C.AMBER_DEEP
+            ).pack()
+        elif mode_name != "default":
+            tk.Label(
+                self.container,
+                text=f"🔄 模式: {mode_name}",
+                font=_F.TINY,
+                fg=_C.BLUE_LIGHT,
+                bg=_C.BG_SURFACE
+            ).pack(anchor=tk.W, pady=(0, 12))
 
         # 加载数据
         try:

@@ -76,57 +76,6 @@ def select_music(icon, item):
             logging.info(f"Music updated to: {file_path}")
 
 
-def set_duration(icon, item):
-    """通过队列在主线程展示设置时长对话框。"""
-    done_event = threading.Event()
-    result = {"val": None}
-
-    def do_set_duration():
-        import tkinter as tk
-        from tkinter import messagebox
-
-        root = tk.Toplevel(tk_root)
-        root.title("设定计时时长")
-        root.attributes("-topmost", True)
-        width, height = 300, 150
-        sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
-        root.geometry(
-            f"{width}x{height}+{int(sw / 2 - width / 2)}+{int(sh / 2 - height / 2)}"
-        )
-        tk.Label(root, text="请输入工作时长 (1-120 分钟):", pady=10).pack()
-        entry = tk.Entry(root, justify="center")
-        entry.insert(0, str(monitor_app.work_duration_minutes))
-        entry.pack(pady=5)
-        entry.focus_set()
-        entry.focus_force()
-
-        def on_confirm(event=None):
-            try:
-                val = int(entry.get())
-                if 1 <= val <= 120:
-                    result["val"] = val
-                    root.destroy()
-                else:
-                    messagebox.showwarning(
-                        "范围错误", "请输入 1 到 120 之间的数字", parent=root
-                    )
-            except ValueError:
-                messagebox.showerror("格式错误", "请输入有效的数字", parent=root)
-
-        tk.Button(root, text="确定", command=on_confirm, width=10).pack(pady=10)
-        root.bind("<Return>", on_confirm)
-        root.bind("<Escape>", lambda e: root.destroy())
-        root.wait_window(root)
-        done_event.set()
-
-    gui_queue.put(do_set_duration)
-    done_event.wait()
-
-    if result["val"]:
-        monitor_app.update_work_duration(result["val"])
-        config = load_config()
-        config["work_duration"] = result["val"]
-        save_config(config)
 
 
 def record_health_data_threaded(icon, item):
@@ -161,7 +110,8 @@ def get_status_text(item):
         "SNOOZE": "已推迟",
     }
     state_text = state_map.get(monitor_app.state, monitor_app.state)
-    return f"状态: {state_text} | 剩余: {mins:02d}:{secs:02d} | 已完成: {monitor_app.completed_rounds} 轮"
+    mode_suffix = " [🌞晨间]" if monitor_app.mode_name == "morning_routine" else ""
+    return f"状态: {state_text}{mode_suffix} | 剩余: {mins:02d}:{secs:02d} | 已完成: {monitor_app.completed_rounds} 轮"
 
 
 def setup_tray():
@@ -176,7 +126,6 @@ def setup_tray():
         ),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("重置并开始工作", lambda icon, item: monitor_app.reset_work()),
-        pystray.MenuItem("设定计时时长", set_duration),
         pystray.MenuItem("选择提醒音乐", select_music),
         pystray.MenuItem(
             lambda item: "禁用开机自启" if is_autostart_enabled() else "启用开机自启",
@@ -204,34 +153,42 @@ def main():
         os._exit(0)
 
     config = load_config()
+    
+    # 音乐路径发现逻辑
     custom_music = config.get("music_path")
-    work_dur = config.get("work_duration", 25)
-    break_dur = 5 * 60
-    snooze_dur = 5 * 60
-
-    if is_test_mode:
-        logging.info("Starting in TEST MODE: 1 min work, 30 sec break/snooze")
-        work_dur = 0.1
-        break_dur = 10
-        snooze_dur = 10
-
     if not custom_music:
-        # 使用相对路径计算默认音乐位置
         default_p = os.path.join(
             os.path.dirname(BASE_DIR), "Bonus Track04.炎と永远——罗德岛战记1OP.mp3"
         )
         if os.path.exists(default_p):
-            custom_music = default_p
+            config["music_path"] = default_p
+
+    if is_test_mode:
+        logging.info("Starting in TEST MODE: Overriding profile settings")
+        config["pomodoro"] = {
+            "default": {"work_duration": 0.1, "rest_duration": 0.1},
+            "morning_routine": {"enabled": False}
+        }
 
     # Monitor 子线程，传入 gui_queue 供弹窗调度
     monitor_app = Monitor(
         ASSETS_DIR,
-        music_path=custom_music,
-        work_duration_minutes=work_dur,
-        break_duration_seconds=break_dur,
-        snooze_duration_seconds=snooze_dur,
+        config=config,
         gui_queue=gui_queue,
     )
+
+    # 检查是否有时间模拟请求
+    for i, arg in enumerate(sys.argv):
+        if arg == "--mock-hour" and i + 1 < len(sys.argv):
+            try:
+                from datetime import time as dt_time
+                mock_h = int(sys.argv[i+1])
+                monitor_app.virtual_time = dt_time(mock_h, 0)
+                monitor_app._refresh_durations() # 立即触发一次刷新
+                logging.info(f"Time Simulation Active: Set to {mock_h}:00")
+            except Exception as e:
+                logging.error(f"Failed to set mock hour: {e}")
+
     threading.Thread(target=monitor_app.run, daemon=True).start()
 
     # 托盘图标在子线程运行（detached），主线程留给 Tkinter

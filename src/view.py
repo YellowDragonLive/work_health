@@ -4,7 +4,7 @@ from window import ReminderWindow
 _active_window = None
 
 def show_reminder_process(message, duration, on_rest, on_snooze, on_close=None,
-                          question=None, on_answer=None):
+                          question=None, on_answer=None, mode_name="default"):
     """实例化并在主线程显示提醒窗口的辅助函数。"""
     global _active_window
     if _active_window:
@@ -12,7 +12,7 @@ def show_reminder_process(message, duration, on_rest, on_snooze, on_close=None,
 
     _active_window = ReminderWindow(
         message, duration, on_rest, on_snooze, on_close,
-        question=question, on_answer=on_answer,
+        question=question, on_answer=on_answer, mode_name=mode_name
     )
     _active_window.show()
 

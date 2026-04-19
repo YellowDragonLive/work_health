@@ -15,7 +15,19 @@ def load_config():
                 return json.load(f)
         except Exception as e:
             logging.error(f"Load Config Error: {e}")
-    return {"music_path": None, "work_duration": 25}
+    return {
+        "music_path": None,
+        "pomodoro": {
+            "default": {"work_duration": 25, "rest_duration": 5},
+            "morning_routine": {
+                "enabled": True,
+                "start_time": "05:00",
+                "end_time": "10:00",
+                "work_duration": 10,
+                "rest_duration": 5
+            }
+        }
+    }
 
 def save_config(config):
     try:

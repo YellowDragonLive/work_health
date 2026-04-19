@@ -2,7 +2,7 @@
 
 > **项目名称**: Work Health (久坐健康助手)  
 > **平台**: Windows 桌面端 (Python + Tkinter + pystray)  
-> **最后更新**: 2026-04-18  
+> **最后更新**: 2026-04-20  
 
 ---
 
@@ -44,18 +44,19 @@ graph TB
     end
     
     subgraph "数据层"
-        CONFIG["config.json<br>用户偏好"]
+        CONFIG["config.json<br>动态策略集 (Profiles)"]
         HEALTH["health_data.json<br>健康数据"]
         JOURNAL["journal_data.json<br>自省记录"]
         QUESTIONS["questions.py<br>问题库"]
     end
 
     TRAY -->|菜单操作放入| GUI_QUEUE
-    MONITOR -->|弹窗请求放入| GUI_QUEUE
+    MONITOR -->|巡检触发更新| CONFIG
+    MONITOR -->|弹窗请求注入 Mode| GUI_QUEUE
     GUI_QUEUE -->|主线程消费| PROCESS_LOOP
     PROCESS_LOOP -->|调用| VIEW
     VIEW -->|实例化| WINDOW
-    WINDOW -->|挂载| UI_LEFT["ui_left.py<br>提示面板"]
+    WINDOW -->|挂载并显示 Mode| UI_LEFT["ui_left.py<br>提示面板"]
     WINDOW -->|挂载| UI_RIGHT["ui_right.py<br>健康面板"]
     WINDOW -->|使用| THEME["theme.py<br>视觉令牌"]
     WINDOW -->|使用| COMPONENTS["components.py<br>原子组件"]
@@ -95,6 +96,8 @@ graph TB
 ### 4.2 `monitor.py` (The Engine)
 - **状态管理**: 维护 `WORK`, `PROMPT`, `BREAK`, `SNOOZE` 状态。
 - **活动检测**: 自动感应用户离开（锁定或空闲）并暂停计时。
+- **动态策略 (Profile Auditing)**: 每次状态切换前自动巡检时间，根据 `config.json` 匹配当前模式（如晨间模式 10/5）。
+- **时间解耦**: 支持 `virtual_time` 注入，实现无损的时间模拟测试。
 
 ### 4.3 `window.py` & `view.py` (The Interface)
 - **调度中心**: `view.py` 负责线程隔离；`window.py` 负责全屏窗口的实例化与三栏布局编排。
@@ -164,3 +167,4 @@ work_health/
 - **v1.0**: 初始版本。
 - **v1.1**: 模块化拆分。`view.py` 拆解为 `view`, `window`, `theme`, `components`。
 - **v1.2**: 深度组件化。`window` 进一步剥离侧边栏逻辑至 `ui_left` 和 `ui_right`。
+- **v1.3**: 策略化编排 (Profile-Based)。引入时间巡检逻辑与虚拟时间模拟；移除冗余的手动时长设定 UI，实现“单源事实”配置驱动。

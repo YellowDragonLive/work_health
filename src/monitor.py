@@ -3,7 +3,7 @@ import ctypes
 import os
 import threading
 import logging
-from datetime import date
+from datetime import date, datetime, time as dt_time
 
 # Constants
 IDLE_PAUSE_THRESHOLD = 1200  # 20 minutes without input before pausing
@@ -55,25 +55,30 @@ class Monitor:
     def __init__(
         self,
         assets_dir,
-        music_path=None,
-        work_duration_minutes=25,
-        break_duration_seconds=5 * 60,
-        snooze_duration_seconds=5 * 60,
+        config,
         gui_queue=None,
     ):
         self.assets_dir = assets_dir
+        self.config = config
         self.running = True
         self.paused = False
         self.state = "WORK"  # WORK, PROMPT, BREAK, SNOOZE
-        self.work_duration_minutes = work_duration_minutes
-        self.break_duration_seconds = break_duration_seconds
-        self.snooze_duration_seconds = snooze_duration_seconds
+        
+        # 时间解耦：支持虚拟时间注入（用于测试）
+        self.virtual_time = None
+        self.mode_name = "default"
+        self.work_duration_minutes = 25
+        self.break_duration_seconds = 5 * 60
+        self.snooze_duration_seconds = 5 * 60
+        self._refresh_durations()
+
         self.completed_rounds = 0
         self.gui_queue = gui_queue  # 主线程 GUI 任务队列
 
         # Audio
         from audio import AudioManager
 
+        music_path = config.get("music_path")
         if music_path and os.path.exists(music_path):
             target_music = music_path
         else:
@@ -138,8 +143,45 @@ class Monitor:
                 else:
                     self.trigger_break()
 
+    def _get_effective_time(self):
+        """获取当前生效的时间（支持虚拟模拟）。"""
+        if self.virtual_time:
+            return self.virtual_time
+        return datetime.now().time()
+
+    def _refresh_durations(self):
+        """核心巡检逻辑：根据当前时间（或模拟时间）更新 Profile。"""
+        now_time = self._get_effective_time()
+        pomodoro_cfg = self.config.get("pomodoro", {})
+        
+        # 默认值
+        default_cfg = pomodoro_cfg.get("default", {"work_duration": 25, "rest_duration": 5})
+        selected_mode = "default"
+        work_min = default_cfg.get("work_duration", 25)
+        rest_min = default_cfg.get("rest_duration", 5)
+
+        # 检查晨间模式
+        morning_cfg = pomodoro_cfg.get("morning_routine", {})
+        if morning_cfg.get("enabled", False):
+            try:
+                sh, sm = map(int, morning_cfg['start_time'].split(':'))
+                eh, em = map(int, morning_cfg['end_time'].split(':'))
+                if dt_time(sh, sm) <= now_time < dt_time(eh, em):
+                    selected_mode = "morning_routine"
+                    work_min = morning_cfg["work_duration"]
+                    rest_min = morning_cfg["rest_duration"]
+            except Exception as e:
+                logging.error(f"Error parsing profile time: {e}")
+
+        self.mode_name = selected_mode
+        self.work_duration_minutes = work_min
+        self.break_duration_seconds = rest_min * 60
+        # snooze 暂时维持 5 分钟默认，或可后续加入配置
+        self.snooze_duration_seconds = 5 * 60
+
     def trigger_break(self):
-        logging.info("Triggering break...")
+        self._refresh_durations()  # 准备进入休息前刷新一次，确保时长准确
+        logging.info(f"Triggering break (Mode: {self.mode_name})...")
         pause_all_media()
         self.state = "PROMPT"
         self.audio.play()
@@ -189,6 +231,7 @@ class Monitor:
                     on_close=on_close_callback,
                     question=current_question,
                     on_answer=self._save_journal_answer,
+                    mode_name=self.mode_name,
                 )
             except Exception as e:
                 logging.error(f"GUI Error in show_window: {e}", exc_info=True)
@@ -256,9 +299,10 @@ class Monitor:
 
         if self.state == "BREAK":
             self.completed_rounds += 1
+        
         self.state = "WORK"
-        self.work_duration_seconds = self.work_duration_minutes * 60
-        self.work_time_remaining = self.work_duration_seconds
+        self._refresh_durations()  # 返回工作前巡检，可能已跨过模式边界时间
+        self.work_time_remaining = self.work_duration_minutes * 60
         self.last_sync_time = time.time()
 
         if self.gui_queue:
@@ -286,9 +330,6 @@ class Monitor:
 
             self.gui_queue.put(close_windows)
 
-    def update_work_duration(self, minutes):
-        self.work_duration_minutes = minutes
-        self.reset_work()
 
     def stop(self):
         self.running = False
