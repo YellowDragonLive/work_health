@@ -14,122 +14,79 @@ class LeftTipPanel:
         self.container.pack(fill=tk.BOTH, expand=True)
         self.container.pack_propagate(False)
 
+        # 头部
+        self._setup_header(mode_name)
+        
+        # 核心内容区 (用于刷新)
+        self.content_area = tk.Frame(self.container, bg=_C.BG_SURFACE)
+        self.content_area.pack(fill=tk.BOTH, expand=True)
+        
+        self.refresh_ui()
+
+    def _setup_header(self, mode_name):
         # 顶部装饰线 (加厚)
         _accent_bar(self.container, _C.AMBER, height=3, pady=(0, 16))
 
+        title_frame = tk.Frame(self.container, bg=_C.BG_SURFACE)
+        title_frame.pack(fill=tk.X, pady=(0, 6))
+
         tk.Label(
-            self.container,
-            text="🎮 人生游戏系统",
-            font=_F.H2,
-            fg=_C.AMBER,
-            bg=_C.BG_SURFACE,
-        ).pack(anchor=tk.W, pady=(0, 6))
+            title_frame, text="🎮 人生游戏系统", font=_F.H2, fg=_C.AMBER, bg=_C.BG_SURFACE
+        ).pack(side=tk.LEFT)
         
-        # 模式指示器 (加粗/显眼)
+        # 模式指示器
         if mode_name == "morning_routine":
             badge_frame = tk.Frame(self.container, bg=_C.AMBER_DEEP, padx=10, pady=4)
             badge_frame.pack(anchor=tk.W, pady=(0, 16))
             tk.Label(
-                badge_frame,
-                text="🌞 晨间冲刺模式 (10/5)",
-                font=_F.SMALL,
-                fg=_C.FG,
-                bg=_C.AMBER_DEEP,
-                weight="bold"
+                badge_frame, text="🌞 晨间冲刺模式 (10/5)", font=_F.SMALL,
+                fg=_C.FG, bg=_C.AMBER_DEEP
             ).pack()
-        elif mode_name != "default":
+
+    def refresh_ui(self):
+        """刷新人生游戏数据展示"""
+        # 清理旧内容
+        for widget in self.content_area.winfo_children():
+            widget.destroy()
+
+        answers = get_latest_synthesis_answers()
+        
+        # 滚动容器
+        canvas = tk.Canvas(self.content_area, bg=_C.BG_SURFACE, highlightthickness=0)
+        scrollbar = tk.Scrollbar(self.content_area, orient="vertical", command=canvas.yview)
+        scroll_frame = tk.Frame(canvas, bg=_C.BG_SURFACE)
+
+        scroll_frame.bind(
+            "<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        canvas.create_window((0, 0), window=scroll_frame, anchor="nw", width=390)
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        for q in SYNTHESIS_QUESTIONS:
+            ans = answers.get(q["id"], "尚未填写使命内容...")
+            
+            q_frame = tk.Frame(scroll_frame, bg=_C.BG_SURFACE, pady=12)
+            q_frame.pack(fill=tk.X)
+
+            # Icon + Section
+            top_f = tk.Frame(q_frame, bg=_C.BG_SURFACE)
+            top_f.pack(fill=tk.X)
+            tk.Label(top_f, text=f"{q['icon']} {q['section']}", font=_F.BODY_BOLD, fg=_C.CYAN, bg=_C.BG_SURFACE).pack(side=tk.LEFT)
+            tk.Label(top_f, text=q['game_role'], font=_F.TINY, fg=_C.FG_MUTED, bg=_C.BG_SURFACE).pack(side=tk.RIGHT)
+
+            # Answer
             tk.Label(
-                self.container,
-                text=f"🔄 当前策略: {mode_name}",
-                font=_F.SMALL,
-                fg=_C.BLUE_LIGHT,
-                bg=_C.BG_SURFACE
-            ).pack(anchor=tk.W, pady=(0, 16))
+                q_frame, text=ans, font=_F.BODY, fg=_C.FG, bg=_C.BG_SURFACE,
+                wraplength=360, justify="left", padx=5, pady=4
+            ).pack(anchor=tk.W)
 
-        # 加载数据
-        try:
-            synthesis_answers = get_latest_synthesis_answers()
-            synth_qs = SYNTHESIS_QUESTIONS
-        except Exception:
-            synthesis_answers = {}
-            synth_qs = []
+            _separator(scroll_frame, color=_C.BORDER, pady=0)
 
-        # 展示六组件 (加大间距)
-        for sq in synth_qs:
-            icon = sq.get("icon", "•")
-            section = sq.get("section", "")
-            game_role = sq.get("game_role", "")
-            answer = synthesis_answers.get(sq["id"], "")
-
-            header_frame = tk.Frame(self.container, bg=_C.BG_SURFACE)
-            header_frame.pack(fill=tk.X, pady=(12, 4)) # 增加垂直间距
-
-            tk.Label(
-                header_frame,
-                text=f"{icon} {section}",
-                font=_F.H3, # 从 SMALL 提升到 H3
-                fg=_C.BLUE_LIGHT,
-                bg=_C.BG_SURFACE,
-            ).pack(side=tk.LEFT)
-
-            tk.Label(
-                header_frame,
-                text=game_role,
-                font=_F.SMALL, # 从 TINY 提升到 SMALL
-                fg=_C.FG_MUTED,
-                bg=_C.BG_SURFACE,
-            ).pack(side=tk.RIGHT)
-
-            if answer:
-                display_text = answer[:80] + "…" if len(answer) > 80 else answer
-                text_color = _C.FG
-                font_style = _F.BODY # 从 TINY 提升到 BODY
-            else:
-                display_text = "尚未定义... " + sq.get("zh", "")[:35]
-                text_color = _C.FG_MUTED
-                font_style = _F.BODY_LG # 占位符使用较大的文字以提示输入
-
-            tk.Label(
-                self.container,
-                text=display_text,
-                font=font_style,
-                fg=text_color,
-                bg=_C.BG_SURFACE,
-                wraplength=400, # 配合 450 宽度
-                justify=tk.LEFT,
-                anchor=tk.W,
-            ).pack(fill=tk.X, padx=(22, 0), pady=(0, 4))
-
-        _separator(self.container, _C.BORDER, pady=16)
-
-        # 随机金句 (更大、更有力量)
-        try:
-            quote = pick_random_quote()
-            tk.Label(
-                self.container,
-                text="💡 灵感触发",
-                font=_F.H3,
-                fg=_C.AMBER,
-                bg=_C.BG_SURFACE,
-            ).pack(anchor=tk.W, pady=(0, 8))
-
-            tk.Label(
-                self.container,
-                text="「 " + quote['zh'] + " 」",
-                font=_F.BODY_LG,
-                fg=_C.FG_DIM,
-                bg=_C.BG_SURFACE,
-                wraplength=400,
-                justify=tk.LEFT,
-            ).pack(fill=tk.X, pady=(0, 6))
-
-            tk.Label(
-                self.container,
-                text=f"— {quote['source']}",
-                font=_F.SMALL,
-                fg=_C.FG_MUTED,
-                bg=_C.BG_SURFACE,
-            ).pack(anchor=tk.E)
-        except Exception:
-            pass
-
+        # 底部随机金句
+        quote = pick_random_quote()
+        quote_f = tk.Frame(self.content_area, bg=_C.BG_VOID, padx=20, pady=15)
+        quote_f.pack(fill=tk.X, side="bottom", pady=(20, 0))
+        tk.Label(quote_f, text=f"“ {quote['zh']} ”", font=_F.EN_BODY, fg=_C.AMBER, bg=_C.BG_VOID, wraplength=350).pack()
+        tk.Label(quote_f, text=f"— {quote['source']}", font=_F.TINY, fg=_C.FG_MUTED, bg=_C.BG_VOID).pack(anchor="e")

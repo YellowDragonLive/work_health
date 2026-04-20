@@ -7,6 +7,16 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_FILE = os.path.join(BASE_DIR, "config.json")
 HEALTH_DATA_FILE = os.path.join(BASE_DIR, "health_data.json")
 JOURNAL_DATA_FILE = os.path.join(BASE_DIR, "journal_data.json")
+LIFE_GAME_FILE = os.path.join(os.path.dirname(BASE_DIR), "life_game.json")
+
+def load_life_game_data():
+    if os.path.exists(LIFE_GAME_FILE):
+        try:
+            with open(LIFE_GAME_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception as e:
+            logging.error(f"Load Life Game Data Error: {e}")
+    return {}
 
 def load_config():
     if os.path.exists(CONFIG_FILE):

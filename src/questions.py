@@ -356,11 +356,23 @@ ALL_QUESTIONS = MORNING_QUESTIONS + DAYTIME_QUESTIONS + EVENING_QUESTIONS
 
 
 def get_latest_synthesis_answers():
-    """获取人生游戏 6 组件的最新回答（从自省记录中提取）。"""
-    from config_manager import load_journal_data
+    """获取人生游戏 6 组件的最新回答。
+    优先从 life_game.json 读取 (Single Source of Truth)，
+    如果 JSON 中缺失组件，则回退到 journal_data.json 的历史记录。
+    """
+    from config_manager import load_journal_data, load_life_game_data
+    
+    # 1. 尝试从 life_game.json 读取
+    json_data = load_life_game_data()
+    all_answers = {k: v for k, v in json_data.items() if k.startswith("s")}
+    
+    # 如果已经集齐 6 个，直接返回
+    if len(all_answers) >= 6:
+        return all_answers
+
+    # 2. 兜底逻辑：从历史日志中提取
     try:
         data = load_journal_data()
-        all_answers = {}
         # 遍历所有日期的回答，获取 s1-s6 每个问题的最后一次有效输入
         for date_str in sorted(data.keys(), reverse=True):
             day_answers = data[date_str].get("answers", [])
@@ -369,12 +381,12 @@ def get_latest_synthesis_answers():
                 if q_id.startswith("s") and q_id not in all_answers:
                     all_answers[q_id] = ans.get("answer")
             
-            # 如果 6 个都已经找全了，提前结束
+            # 如果已经找全了，提前结束
             if len(all_answers) >= 6:
                 break
         return all_answers
     except Exception:
-        return {}
+        return all_answers
 
 
 def pick_random_quote():
@@ -425,8 +437,13 @@ def pick_random_question(phase=None, exclude_ids=None):
 
 
 def get_question_by_id(question_id):
-    """根据 ID 查找问题。"""
+    """根据 ID 查找问题。支持常规题库和人生游戏 6 组件题库。"""
+    # 优先查找常规库
     for q in ALL_QUESTIONS:
+        if q["id"] == question_id:
+            return q
+    # 查找人生游戏库
+    for q in SYNTHESIS_QUESTIONS:
         if q["id"] == question_id:
             return q
     return None

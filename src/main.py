@@ -181,13 +181,23 @@ def main():
 
     is_test_mode = "--test" in sys.argv
 
-    # 单例锁
+    # 抢占式单例锁：使用 WMIC 彻底清理系统中所有运行 main.py 的旧实例
+    from utils import force_kill_all_instances
+    force_kill_all_instances()
+
     try:
         lock_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         lock_socket.bind(("127.0.0.1", 45678))
     except socket.error:
-        logging.warning("Another instance is already running. Exiting.")
-        os._exit(0)
+        # 如果依然失败，进行最后的暴利清理并重试一次
+        logging.warning("Initial bind failed, retrying brute-force cleanup...")
+        force_kill_all_instances()
+        try:
+            lock_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            lock_socket.bind(("127.0.0.1", 45678))
+        except socket.error:
+            logging.error("无法启动：即使经过强力清理，单例端口 45678 仍被占用。")
+            os._exit(0)
 
     config = load_config()
     

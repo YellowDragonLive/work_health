@@ -21,6 +21,14 @@ def _make_button(parent, text, command, bg, hover_bg, fg="white",
     return btn
 
 
+def create_modern_button(parent, text, command):
+    """编辑器/表单使用的标准现代按钮。"""
+    return _make_button(
+        parent, text, command, 
+        bg=_C.ACCENT, hover_bg=_C.CYAN_DEEP, fg=_C.FG
+    )
+
+
 def _separator(parent, color=_C.BORDER, height=1, **pack_kw):
     """水平分隔线。"""
     sep = tk.Frame(parent, bg=color, height=height)

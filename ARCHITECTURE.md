@@ -1,265 +1,147 @@
-# 久坐健康助手 — 架构设计文档
+# Work Health 架构设计文档 (ARCHITECTURE.md)
 
-> **项目名称**: Work Health (久坐健康助手)  
-> **平台**: Windows 桌面端 (Python + Tkinter + pystray)  
-> **最后更新**: 2026-04-20 (v1.7)  
+## 1. 概述 (Overview)
 
----
+| 维度 | 详细内容 |
+| :--- | :--- |
+| **项目名称** | Work Health (久坐健康助手) |
+| **核心技术栈** | Python 3.x, Tkinter, Pygame (Audio), Pystray (Tray), JSON |
+| **核心价值** | 🛡️ 保护开发者生理健康，通过“人生游戏”框架实现长期生产力与心理自省的平衡。 |
+| **最后更新** | 2026-04-21 |
 
-## 1. 项目概述
-
-**久坐健康助手** 是一款 Windows 系统托盘常驻应用，核心功能是 **Pomodoro 式工作-休息计时器**，同时融合了 **每日生理健康指标追踪** 和 **Dan Koe "人生游戏"自省问答系统**。
-
-### 1.1 核心价值主张
-
-| 维度 | 功能 |
-|------|------|
-| 🧘 **身体健康** | 周期性强制休息提醒，防止久坐损伤 |
-| 📊 **数据追踪** | 体重、血压、心率等生理指标的每日累计记录 |
-| 💭 **心理自省** | 基于 Dan Koe "人生重启协议"的三阶段自省问答 |
-| 🎮 **游戏化** | "人生游戏面板"将长期目标拆解为可操作的六组件系统 |
+### 核心功能点
+*   🎮 **人生游戏引擎**: 基于 Dan Koe 哲学，通过 `life_game.json` 配置 6 大核心组件（愿景/反愿景等）。
+*   ⏳ **动态番茄钟**: 智能识别时段（如晨间冲刺），自动切换工作/休息时长策略。
+*   🧠 **深度自省系统**: 提供分阶段（早/中/晚）的心理建设提问，支持 Markdown 格式日志持久化。
+*   📊 **健康指标追踪**: 每日强制/手动录入体重、血压等核心指标并存档。
 
 ---
 
-## 2. 系统架构总览 (System Architecture)
+## 2. 系统架构设计 (System Architecture)
 
 ```mermaid
 graph TB
-    subgraph "主线程 (GUI Thread - Tkinter)"
-        TK_ROOT["Tkinter Root<br/>隐藏根窗口/生命周期管理"]
-        GUI_QUEUE["gui_queue<br/>多线程安全任务队列"]
-        VIEW["view.py<br/>UI 入口总线"]
-        WINDOW["window.py<br/>ReminderWindow<br/>三栏布局调度中心"]
-        UI_L["ui_left.py<br/>人生游戏提示面板"]
-        UI_R["ui_right.py<br/>生理指标录入面板"]
-        THEME["theme.py<br/>视觉令牌/Token"]
-        
-        WINDOW --- UI_L
-        WINDOW --- UI_R
-        WINDOW --- THEME
-    end
-    
-    subgraph "核心后台线程 (Logic Thread - Monitor)"
-        MONITOR["monitor.py<br/>FSM 状态机控制器"]
-        DETECTOR["Activity Detector<br/>系统锁定/空闲感应"]
-        AUDITOR["Profile Auditor<br/>动态策略实时巡检"]
-        
-        MONITOR --> DETECTOR
-        MONITOR --> AUDITOR
-    end
-    
-    subgraph "外围子系统 (Services)"
-        TRAY["pystray<br/>系统托盘 & 快捷操作"]
-        AUDIO["audio.py<br/>AudioManager<br/>多阶段背景音控制"]
-    end
-    
-    subgraph "持久化层 (Persistence)"
-        CONFIG["config.json<br/>单源事实模式配置"]
-        STORAGE["JSON Data<br/>health/journal"]
+    subgraph UI_Layer["展示层 (GUI/Tray)"]
+        Tray["系统托盘 (Pystray)"]
+        Reminder["全屏提醒窗口 (Tkinter)"]
+        SidePanels["双翼面板 (Left/Right Panel)"]
     end
 
-    %% 交互链路
-    TRAY -- "菜单指令" --> GUI_QUEUE
-    MONITOR -- "UI 唤起/销毁请求" --> GUI_QUEUE
-    GUI_QUEUE -- "主循环消费" --> VIEW
-    VIEW -- "挂载/卸载" --> WINDOW
-    MONITOR -- "状态回调" --> AUDIO
-    WINDOW -- "数据持久化" --> STORAGE
-    AUDITOR -- "热加载" --> CONFIG
-    CONFIG -- "驱动策略" --> MONITOR
+    subgraph Service_Layer["业务逻辑层"]
+        Monitor["状态机核心 (Monitor)"]
+        Scheduler["动态调度算法"]
+        AudioMgr["音频自愈管理器"]
+    end
+
+    subgraph Persistence_Layer["数据持久层"]
+        JSON_Config["config.json (系统配置)"]
+        JSON_LifeGame["life_game.json (人生游戏配置)"]
+        JSON_Journal["journal_data.json (自省日志)"]
+        JSON_Health["health_data.json (生理数据)"]
+    end
+
+    Tray -->|唤醒| Monitor
+    Monitor -->|状态驱动| Reminder
+    Reminder -->|渲染| SidePanels
+    Monitor -->|读取/写入| Persistence_Layer
+    Monitor -->|播放控制| AudioMgr
 ```
+
+> **架构说明**：系统采用“监视器-拦截器”模型。`Monitor` 在后台线程维持状态机，当番茄钟耗尽时，通过 GUI 任务队列在主线程唤醒全屏 `ReminderWindow` 拦截用户操作。
 
 ---
 
-## 3. 核心逻辑状态机 (State Machine Lifecycle)
+## 3. 核心组件与模块职责 (Core Components & Responsibilities)
 
-系统核心由 `monitor.py` 驱动的状态机控制，结合了 **动态时长巡检** 和 **生理感测隔离**。
+*   **Monitor (monitor.py)**
+    *   **职责**：全局状态机管理 (WORK -> PROMPT -> BREAK -> SNOOZE)；管理 `gui_queue`；触发跨进程清理。
+    *   **边界**：不直接操作 UI 组件，仅通过回调或队列下达指令。
+*   **ReminderWindow (window.py)**
+    *   **职责**：管理全屏沉浸式体验；编排左（人生游戏）、右（生理指标）、中（计时与问答）三个核心仓的布局。
+    *   **关键接口**：通过 `on_answer` 回调将数据传回逻辑层。
+*   **Audio Manager (audio.py)**
+    *   **职责**：处理音频加载、路径自愈（将相对路径转换为绝对路径）、跨状态背景音切换。
+*   **Config Manager (config_manager.py)**
+    *   **职责**：统一负责全系统 4 个 JSON 文件的 I/O。
+
+---
+
+## 4. 核心业务数据流 (Data Flow)
+
+### 场景：抢占式单例启动与控制台隐藏
 
 ```mermaid
-stateDiagram-v2
-    [*] --> WORK_INIT: 应用启动
-    
-    state WORK_INIT {
-        [*] --> Checking: 加载当前时间 Profile
-        Checking --> Running: 启动工作倒计时
-    }
+sequenceDiagram
+    participant User as 用户/OS
+    participant ProcA as 进程 A (python.exe)
+    participant WMIC as Windows WMIC
+    participant ProcB as 进程 B (pythonw.exe)
 
-    state WORK_PHASE {
-        Running: 正常计时中
-        Idle_Paused: 已感应到空闲/锁定 (暂停)
-        Running --> Idle_Paused: 系统锁定或 3min 无操作
-        Idle_Paused --> Running: 用户回归
-    }
-    
-    WORK_INIT --> WORK_PHASE
-    
-    WORK_PHASE --> PROMPT: 工作时长达到 Profile 阈值
-    
-    state PROMPT {
-        [*] --> Waiting: 悬浮窗/通知提醒
-        Waiting --> SNOOZE: 用户点击"稍后"
-        Waiting --> BREAK: 用户点击"开始休息"
-        Waiting --> BREAK: 30s 无操作自动进入休息
-    }
-    
-    SNOOZE --> WORK_PHASE: 延时结束后回归
-    
-    state BREAK_PHASE {
-        Countdown: 身体活动/饮水 (提醒音乐)
-        Reflection: 深度自省/录入 (反思音乐)
-        
-        [*] --> Countdown
-        Countdown --> Reflection: 倒计时结束
-        Reflection --> Done: 提交数据并关闭
-    }
-    
-    BREAK_PHASE --> WORK_INIT: `done_event` 触发
+    User->>ProcA: 运行 python main.py
+    ProcA->>WMIC: 扫描命令行含 main.py 的进程
+    WMIC-->>ProcA: 返回旧进程 PID
+    ProcA->>ProcA: 强制 Taskkill 旧进程
+    ProcA->>ProcB: Popen (pythonw + --nowindow)
+    ProcA->>ProcA: sys.exit(0)
+    ProcB->>ProcB: 获取 Socket (45678) 锁
+    ProcB->>ProcB: 进入主运行循环
 ```
 
----
-
-## 4. 核心组件说明 (Core Components)
-
-- **`main.py`**: 应用程序入口，管理线程初始化与单例锁。
-- **`monitor.py`**: 核心逻辑引擎，处理计时、状态切换与系统活动检测。
-- **`view.py`**: UI 入口，协调窗口的显示与关闭。
-- **`window.py`**: 提醒窗口主框架，协调各子面板与中心交互业务流。
-- **`ui_left.py`**: 左侧"人生游戏"提示面板组件。
-- **`ui_right.py`**: 右侧"生理指标"录入面板组件。
-- **`theme.py`**: UI 视觉令牌（颜色、字体）。
-- **`components.py`**: 可复用的 UI 基础组件。
-- **`audio.py`**: 音频播放控制器，支持多轨道切换（提醒音 vs. 反思音）。
-- **`questions.py`**: 自省问题库与金句库。
-- **`config_manager.py`**: 数据持久化处理。
-- **`utils.py`**: Windows 专用工具函数。
+1.  **进程 A** 启动并立即收割旧实例。
+2.  通过 **WMIC** 扫描确保系统干净。
+3.  启动 **进程 B** 并携带 `--nowindow` 参数以避开控制台。
+4.  **进程 B** 锁定 Socket 确保单例，正式接管托盘。
 
 ---
 
-## 4. 模块职责 (Module Responsibilities)
+## 5. 数据与存储架构 (Data & Storage Architecture)
 
-### 4.1 `main.py` (The Orchestrator)
-- **线程管理**: 启动 Monitor 和 Tray 线程。
-- **消息路由**: 监听 `gui_queue` 并根据消息类型调用 `view.py` 中的渲染函数，确保所有 GUI 操作均在主线程执行。
-
-### 4.2 `monitor.py` (The Engine)
-- **状态管理**: 维护 `WORK`, `PROMPT`, `BREAK`, `SNOOZE` 状态。
-- **活动检测**: 自动感应用户离开（锁定或空闲）并暂停计时。
-- **动态策略 (Profile Auditing)**: 每次状态切换前自动巡检时间，根据 `config.json` 匹配当前模式（如晨间模式 10/5）。
-- **时间解耦**: 支持 `virtual_time` 注入，实现无损的时间模拟测试。
-- **多音轨调度**: 根据状态切换背景音乐。在 `PROMPT/BREAK` 播放提醒曲目，在进入 `Reflection` (回答) 阶段时精确切换到反思曲目。
-
-### 4.3 `window.py` & `view.py` (The Interface)
-- **调度中心**: `view.py` 负责线程隔离；`window.py` 负责全屏窗口的实例化与三栏布局编排。
-- **子面板协作**: `window.py` 在休息开始时实例化 `ui_left.py` 和 `ui_right.py`。
-- **交互逻辑**: 中栏的问题展示与多行文本回答逻辑保留在 `window.py` 中。
+*   **life_game.json**: 存储人生游戏的长期使命。用户手动编辑，程序只读并在 UI 展示。
+*   **journal_data.json**: 按日期索引存储自省回答。新数据追加在 `answers` 数组中。
+*   **health_data.json**: 按日期存储生理指标快照。支持同一天多次录入。
+*   **持久化策略**：使用 Python 原生 `json` 模块，配置 `ensure_ascii=False` 保证中文字符集原生呈现。
 
 ---
 
-## 5. 模块详解 (核心 UI 拆分版)
+## 6. 非功能性设计 (Non-Functional Requirements)
 
-### 5.1 布局总线 — `window.py`
-**职责**: 负责 Toplevel 窗口属性管理、背景遮罩、主计时器 (`after`)、中心区域 (Question/Answer) 状态切换以及最终数据的持久化拦截（调用 `ui_right` 获取输入值）。
-
-### 5.2 左侧栏 — `ui_left.py` (Life Game Panel)
-**职责**: 独立封装"人生游戏六组件"的展示逻辑。自动从 `questions.py` 获取最新回答，并处理 `placeholder` (灰色未填写态) 与随机金句展示。
-
-### 5.3 右侧栏 — `ui_right.py` (Health Panel)
-**职责**: 封装生理指标录入表单。内置 `placeholder` 刷新逻辑（自动查找历史记录）与 `dirty` 状态追踪。提供 `get_real_values()` 供主窗口在提交时调用。
-
-### 5.4 视觉系统 — `theme.py` & `components.py`
-**职责**: 定义项目的设计规范，提供 `_C` (Color)、`_F` (Font) 以及 `_CircleTimer` 等原子化组件。
+*   **可靠性 (Reliability)**：
+    *   **路径自愈**：启动时自动扫描音频文件是否存在，若配置失效则基于 `root` 目录进行搜索重定向。
+    *   **端口抢占**：通过强制杀掉端口占用者，确保应用永远能够更新重启，不会死锁在后台。
+*   **性能优化 (Performance)**：
+    - **非阻塞 I/O**：日志写入和音频播放均在独立线程或异步方式处理，不影响 UI 刷新。
+    - **资源懒加载**：大文件（如自省记录）仅在保存或特定查询时加载。
 
 ---
 
-## 6. 数据流 (Data Flow)
+## 7. 物理结构与目录树 (Directory Structure)
 
-### 6.1 休息数据保存逻辑
-1. 用户在 `ui_right.py` 表单中修改健康数值。
-2. 用户在 `window.py` 的中栏完成思考后点击“提交”。
-3. `window.py` 调用 `ui_right.get_real_values()` 提取数据。
-4. `window.py` 整合两者数据并调用 `config_manager` 写入磁盘。
-5. 向后台发送 `done_event`，唤醒 `monitor.py` 回到工作状态。
-
----
-
-## 7. 文件结构
-
-```
+```tree
 work_health/
-├── src/                              # 源码目录
-│   ├── main.py                       # 入口 · 编排 · 托盘
-│   ├── monitor.py                    # 状态机 · 计时 · 活动检测
-│   ├── view.py                       # UI 入口 · 生命周期
-│   ├── window.py                     # 核心布局 · 三栏调度器
-│   ├── ui_left.py                    # 子组件: 左侧提示面板
-│   ├── ui_right.py                   # 子组件: 右侧健康面板
-│   ├── theme.py                      # 视觉令牌 (颜色/字体)
-│   ├── components.py                 # UI 基础组件 (CircleTimer/按钮)
-│   ├── questions.py                  # 自省问题库 (33题 + 6组件 + 金句)
-│   ├── config_manager.py             # JSON 读写 (config/health/journal)
-│   ├── audio.py                      # pygame 音频管理
-│   ├── utils.py                      # Windows 工具 (隐藏控制台/自启动)
-│   ├── config.json                   # 用户偏好 [.gitignore]
-│   ├── health_data.json              # 健康数据 [.gitignore]
-│   ├── journal_data.json             # 自省记录 [.gitignore]
-│   └── assets/
-│       ├── icon.png                  # 托盘图标
-│       ├── article.md                # 核心协议参考 (英)
-│       ├── article_zh.md              # 核心协议参考 (中)
-│       └── default_music.wav         # 默认提示音
+├── src/
+│   ├── assets/             # 静态资源（图标、音频、问答库）
+│   ├── config_manager.py   # JSON I/O 核心
+│   ├── monitor.py          # 状态机与后台逻辑
+│   ├── questions.py        # 问答库与检索算法
+│   ├── theme.py            # 统一 UI 令牌 (Tokens)
+│   ├── ui_left.py          # 人生游戏展示面板
+│   ├── ui_right.py         # 健康指标录入面板
+│   ├── utils.py            # UAC 绕过/进程清理/自启工具
+│   ├── view.py             # 窗口总线
+│   └── window.py           # 全屏提醒核心组件
+├── config.json             # 系统运行时配置
+├── life_game.json          # 人生游戏 6 组件 (用户编辑)
+├── app.log                 # 运行日志 (UTF-8)
+└── main.py                 # 启动入口 (进程管理器)
 ```
 
 ---
 
-## 8. 演进记录
+## 8. 演进路线图 (Roadmap)
 
-- **v1.0 - v1.5**: 基础架构实现、场景音乐引入与配置解耦。
-- **v1.6**: **视觉规格大革命 (Dashboard Era)**。全屏矩阵布局、三栏指挥塔分工、Modern Card 感官重塑。
-- **v1.7**: **工程鲁棒性与可观测性增强**。
-    - **音频路径自愈 (Auto-Healing)**: 自动将无效的相对路径纠正为绝对路径，应对多级目录运行环境（如根目录 vs src 目录）。
-    - **日志系统标准化 (Unified Logging)**: 全项目禁绝 `print`，统一接入 `logging` 模块并持久化至 `app.log`，强化后台运行的可追溯性。
-    - **单例锁与编码优化**: 强制采用 UTF-8 编码读取持久化数据，避免 Windows 环境下的乱码风险。
-
----
-
-## 9. 特色布局：全屏可视化矩阵 (Fullscreen Matrix)
-
-系统在 v1.6 引入了基于全屏比例的布局逻辑：
-
-| 区域 | 宽度规格 | 核心职责 | 视觉表现 |
-|------|----------|----------|----------|
-| **左侧面板** | `450px` (固定) | 人生游戏系统 6 组件 | 超宽展示，支持长文本阅读 |
-| **中心舞台** | `Expand` (动态) | 计时器/深度自省/输入 | 文字包裹收紧至 `650-700px` 焦点区 |
-| **右侧面板** | `420px` (固定) | 生理健康指标监控 | 宽阔的录入区域，仪表盘视觉 |
-
-**设计理念**: 模拟高端驾驶舱视觉，两翼提供全量背景信息流，中心提供任务相关的精确深度交互。
-
----
-
-## 10. 特色功能：多阶段场景音乐 (Scenario Audio)
-
-系统通过 `audio.py` 实现了基于状态的背景音乐切换，增强了心理暗示的区分度：
-
-| 阶段 | 状态 | 音乐类型 | 功能描述 |
-|------|------|----------|----------|
-| **提醒阶段** | `PROMPT` | 提醒歌曲 (A) | 唤回用户注意力，提示准备休息 |
-| **休息阶段** | `BREAK` | 提醒歌曲 (A) | 延续提醒氛围，进行倒计时身体活动 |
-| **反思阶段** | `ANSWER_INPUT` | 反思歌曲 (B) | 切换至专注/宁静旋律，引导深度思考录入 |
-
-**实现机制**: `Monitor` 作为调度者，通过回调函数机制监听 `ReminderWindow` 的 UI 事件。当 UI 进度从倒计时转入回答框展示时，触发 `on_reflection_start` 回调，完成音轨的热切换。
-
----
-
-## 11. 工程鲁棒性保证 (Engineering Robustness)
-
-### 11.1 路径自愈机制 (Audio Path Self-Healing)
-由于 Windows 环境下工作目录 (CWD) 的不确定性，系统在启动初期会进行“路径审计”：
-1. 检测 `config.json` 中的音频路径是否真实存在。
-2. 若失效，则尝试以项目根目录为基准重新定位同名文件。
-3. 将最终定位到的**物理绝对路径**持久化回配置，确保后续状态机调度 100% 成功。
-
-### 11.2 可观测性体系 (Observability)
-系统完全弃用 `print`，所有模块均通过 `logging` 与主进程同步。日志文件 `app.log` 具备以下特征：
-- **UTF-8 编码**: 完美记录包含中日文符号的音频路径。
-- **逐秒同步**: 实时监控 Monitor 线程的心跳与 UI 事件队列。
-- **精细化分级**: 覆盖资产加载、音频调度、UI 生命周期全过程。
+*   **v1.0 (MVP)**: 基础计时与弹窗。
+*   **v1.x (Current)**: 引入人生游戏框架、抢占式启动流、动态番茄钟策略。
+*   **v2.0 (Planned)**: 
+    - 引入可视化图表（体重/血压/专注度趋势）。
+    - 增加基于人生游戏的进度条视觉系统。
+    - 支持 Obsidian 同步插件直读 journal 数据。
