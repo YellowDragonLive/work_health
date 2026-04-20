@@ -79,7 +79,7 @@ class _CircleTimer:
         ratio = remaining / total
         self.canvas.itemconfig(self.arc, extent=-360 * ratio)
 
-        mins, secs = divmod(remaining, 60)
+        mins, secs = divmod(int(remaining), 60)
         self.canvas.itemconfig(self.time_id, text=f"{mins:02d}:{secs:02d}")
 
         # 颜色随剩余比例渐变

@@ -4,7 +4,7 @@ from window import ReminderWindow
 _active_window = None
 
 def show_reminder_process(message, duration, on_rest, on_snooze, on_close=None,
-                          question=None, on_answer=None, mode_name="default"):
+                          question=None, on_answer=None, on_reflection_start=None, mode_name="default"):
     """实例化并在主线程显示提醒窗口的辅助函数。"""
     global _active_window
     if _active_window:
@@ -12,12 +12,12 @@ def show_reminder_process(message, duration, on_rest, on_snooze, on_close=None,
 
     _active_window = ReminderWindow(
         message, duration, on_rest, on_snooze, on_close,
-        question=question, on_answer=on_answer, mode_name=mode_name
+        question=question, on_answer=on_answer, on_reflection_start=on_reflection_start, mode_name=mode_name
     )
     _active_window.show()
 
 
-def show_manual_record(on_answer=None):
+def show_manual_record(on_answer=None, on_reflection_start=None):
     """托盘菜单或其他来源触发手动记录的入口。"""
     global _active_window
     if _active_window:
@@ -33,7 +33,7 @@ def show_manual_record(on_answer=None):
     # 手动记录：duration=0 时会跳过倒计时直接进入回答模式
     _active_window = ReminderWindow(
         "手动录入每日指标", 0, None, None, None,
-        question=question, on_answer=on_answer
+        question=question, on_answer=on_answer, on_reflection_start=on_reflection_start
     )
     _active_window.show()
     # 直接构建三栏并进入回答模式

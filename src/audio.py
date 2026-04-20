@@ -22,19 +22,21 @@ class AudioManager:
             return True
         return False
 
-    def play(self, loops=-1):
-        """Plays the current music. Loops infinitely by default."""
+    def play(self, path=None, loops=-1):
+        """Plays music. If path is provided, it updates current music and plays. Loops infinitely by default."""
         if not self._is_initialized:
             return
 
+        target = path or self._current_music_path
+        if not target or not os.path.exists(target):
+            print(f"Music file not found: {target}")
+            return
+
         try:
-            # Try loading custom/current music
-            if self._current_music_path and os.path.exists(self._current_music_path):
-                pygame.mixer.music.load(self._current_music_path)
-                pygame.mixer.music.play(loops)
-            else:
-                print(f"Music file not found: {self._current_music_path}")
-                # Fallback logic could go here
+            pygame.mixer.music.load(target)
+            pygame.mixer.music.play(loops)
+            if path:
+                self._current_music_path = path
         except Exception as e:
             print(f"Error playing music: {e}")
 

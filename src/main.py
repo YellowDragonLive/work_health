@@ -71,9 +71,42 @@ def select_music(icon, item):
     if file_path:
         if monitor_app.audio.set_music(file_path):
             config = load_config()
-            config["music_path"] = file_path
+            if "audio" not in config: config["audio"] = {}
+            config["audio"]["reminder_rest_path"] = file_path
+            monitor_app.music_path = file_path # 同步到 monitor
             save_config(config)
             logging.info(f"Music updated to: {file_path}")
+
+
+def select_reflection_music(icon, item):
+    """通过队列在主线程打开文件选择对话框（针对反思背景音乐）。"""
+    done_event = threading.Event()
+    result = {}
+
+    def do_select():
+        from tkinter import filedialog
+
+        file_path = filedialog.askopenfilename(
+            parent=tk_root,
+            title="选择反思/问答背景音乐",
+            filetypes=[("音乐文件", "*.mp3 *.wav"), ("所有文件", "*.*")],
+        )
+        result["path"] = file_path
+        done_event.set()
+
+    gui_queue.put(do_select)
+    done_event.wait()
+
+    file_path = result.get("path", "")
+    if file_path:
+        # 我们不在这里直接 play，只更新配置和 monitor 状态
+        config = load_config()
+        if "audio" not in config: config["audio"] = {}
+        config["audio"]["reflection_path"] = file_path
+        if monitor_app:
+            monitor_app.reflection_music_path = file_path
+        save_config(config)
+        logging.info(f"Reflection music updated to: {file_path}")
 
 
 
@@ -83,7 +116,10 @@ def record_health_data_threaded(icon, item):
     from view import show_manual_record
 
     gui_queue.put(
-        lambda: show_manual_record(on_answer=monitor_app._save_journal_answer)
+        lambda: show_manual_record(
+            on_answer=monitor_app._save_journal_answer,
+            on_reflection_start=monitor_app.on_user_start_reflection
+        )
     )
 
 
@@ -126,7 +162,8 @@ def setup_tray():
         ),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("重置并开始工作", lambda icon, item: monitor_app.reset_work()),
-        pystray.MenuItem("选择提醒音乐", select_music),
+        pystray.MenuItem("选择提醒音乐 (A)", select_music),
+        pystray.MenuItem("选择反思音乐 (B)", select_reflection_music),
         pystray.MenuItem(
             lambda item: "禁用开机自启" if is_autostart_enabled() else "启用开机自启",
             toggle_autostart,
@@ -154,20 +191,40 @@ def main():
 
     config = load_config()
     
+    # 确保 audio 配置结构存在
+    if "audio" not in config:
+        config["audio"] = {
+            "reminder_rest_path": None,
+            "reflection_path": None,
+            "volume": 0.3
+        }
+
     # 音乐路径发现逻辑
-    custom_music = config.get("music_path")
-    if not custom_music:
+    audio_cfg = config["audio"]
+    if not audio_cfg.get("reminder_rest_path"):
         default_p = os.path.join(
             os.path.dirname(BASE_DIR), "Bonus Track04.炎と永远——罗德岛战记1OP.mp3"
         )
         if os.path.exists(default_p):
-            config["music_path"] = default_p
+            audio_cfg["reminder_rest_path"] = default_p
+
+    if not audio_cfg.get("reflection_path"):
+        default_r = os.path.join(
+            os.path.dirname(BASE_DIR), "17.Tune the rainbow——翼神传说多元变奏曲.mp3"
+        )
+        if os.path.exists(default_r):
+            audio_cfg["reflection_path"] = default_r
+            
+    # 持久化自动发现的路径
+    save_config(config)
 
     if is_test_mode:
-        logging.info("Starting in TEST MODE: Overriding profile settings")
+        logging.info("Starting in TEST MODE: Using 'test' profile from config")
+        # 从配置中读取测试参数，若无则使用默认 0.1
+        test_cfg = config.get("pomodoro", {}).get("test", {"work_duration": 0.1, "rest_duration": 0.1})
         config["pomodoro"] = {
-            "default": {"work_duration": 0.1, "rest_duration": 0.1},
-            "morning_routine": {"enabled": False}
+            "default": test_cfg,
+            "morning_routine": {"enabled": False}  # 测试模式下禁用其他时间策略干扰
         }
 
     # Monitor 子线程，传入 gui_queue 供弹窗调度

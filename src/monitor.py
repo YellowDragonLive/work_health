@@ -78,13 +78,18 @@ class Monitor:
         # Audio
         from audio import AudioManager
 
-        music_path = config.get("music_path")
-        if music_path and os.path.exists(music_path):
-            target_music = music_path
+        audio_cfg = config.get("audio", {})
+        self.music_path = audio_cfg.get("reminder_rest_path")
+        self.reflection_music_path = audio_cfg.get("reflection_path")
+        
+        # Determine initial music
+        if self.music_path and os.path.exists(self.music_path):
+            initial_music = self.music_path
         else:
-            target_music = os.path.join(assets_dir, "default_music.wav")
+            initial_music = os.path.join(assets_dir, "default_music.wav")
 
-        self.audio = AudioManager(target_music)
+        self.audio = AudioManager(initial_music)
+        self.audio.set_volume(audio_cfg.get("volume", 0.3))
 
         # Config
         self.work_time_remaining = self.work_duration_minutes * 60
@@ -184,7 +189,7 @@ class Monitor:
         logging.info(f"Triggering break (Mode: {self.mode_name})...")
         pause_all_media()
         self.state = "PROMPT"
-        self.audio.play()
+        self.audio.play(self.music_path)
 
         # 挑选一个自省问题
         current_question = None
@@ -231,6 +236,7 @@ class Monitor:
                     on_close=on_close_callback,
                     question=current_question,
                     on_answer=self._save_journal_answer,
+                    on_reflection_start=self.on_user_start_reflection, # 新增
                     mode_name=self.mode_name,
                 )
             except Exception as e:
@@ -281,8 +287,13 @@ class Monitor:
             logging.error(f"Failed to save journal answer: {e}", exc_info=True)
 
     def on_user_start_rest(self):
-        logging.info("User started rest.")
+        logging.info("User started rest. Keeping original music.")
         self.state = "BREAK"
+
+    def on_user_start_reflection(self):
+        logging.info("User started reflection (answering). Switching music.")
+        if self.reflection_music_path and os.path.exists(self.reflection_music_path):
+            self.audio.play(self.reflection_music_path)
 
     def on_user_snooze(self):
         logging.info("User snoozed.")

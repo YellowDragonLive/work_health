@@ -12,7 +12,7 @@ from ui_right import RightHealthPanel
 
 class ReminderWindow:
     def __init__(self, message, duration_seconds, on_start_rest, on_snooze, on_close,
-                 question=None, on_answer=None, mode_name="default"):
+                 question=None, on_answer=None, on_reflection_start=None, mode_name="default"):
         self.message = message
         self.duration_seconds = duration_seconds
         self.on_start_rest = on_start_rest
@@ -20,6 +20,7 @@ class ReminderWindow:
         self.on_close = on_close
         self.question = question
         self.on_answer = on_answer
+        self.on_reflection_start = on_reflection_start
         self.mode_name = mode_name
 
         self.root = None
@@ -124,6 +125,9 @@ class ReminderWindow:
         if not self.question:
             self.force_close()
             return
+
+        if self.on_reflection_start:
+            self.on_reflection_start()
 
         self.lbl_msg.config(text="休息结束！请写下你的思考 ✍️", font=_F.H1, fg=_C.GREEN)
         for w in self.center_frame.winfo_children(): w.destroy()

@@ -44,7 +44,7 @@ graph TB
     end
     
     subgraph "数据层"
-        CONFIG["config.json<br>动态策略集 (Profiles)"]
+        CONFIG["config.json<br>动态策略集 (Profiles)<br>含 audio/test 专用配置"]
         HEALTH["health_data.json<br>健康数据"]
         JOURNAL["journal_data.json<br>自省记录"]
         QUESTIONS["questions.py<br>问题库"]
@@ -80,7 +80,7 @@ graph TB
 - **`ui_right.py`**: 右侧"生理指标"录入面板组件。
 - **`theme.py`**: UI 视觉令牌（颜色、字体）。
 - **`components.py`**: 可复用的 UI 基础组件。
-- **`audio.py`**: 音频播放控制器。
+- **`audio.py`**: 音频播放控制器，支持多轨道切换（提醒音 vs. 反思音）。
 - **`questions.py`**: 自省问题库与金句库。
 - **`config_manager.py`**: 数据持久化处理。
 - **`utils.py`**: Windows 专用工具函数。
@@ -98,6 +98,7 @@ graph TB
 - **活动检测**: 自动感应用户离开（锁定或空闲）并暂停计时。
 - **动态策略 (Profile Auditing)**: 每次状态切换前自动巡检时间，根据 `config.json` 匹配当前模式（如晨间模式 10/5）。
 - **时间解耦**: 支持 `virtual_time` 注入，实现无损的时间模拟测试。
+- **多音轨调度**: 根据状态切换背景音乐。在 `PROMPT/BREAK` 播放提醒曲目，在进入 `Reflection` (回答) 阶段时精确切换到反思曲目。
 
 ### 4.3 `window.py` & `view.py` (The Interface)
 - **调度中心**: `view.py` 负责线程隔离；`window.py` 负责全屏窗口的实例化与三栏布局编排。
@@ -168,3 +169,18 @@ work_health/
 - **v1.1**: 模块化拆分。`view.py` 拆解为 `view`, `window`, `theme`, `components`。
 - **v1.2**: 深度组件化。`window` 进一步剥离侧边栏逻辑至 `ui_left` 和 `ui_right`。
 - **v1.3**: 策略化编排 (Profile-Based)。引入时间巡检逻辑与虚拟时间模拟；移除冗余的手动时长设定 UI，实现“单源事实”配置驱动。
+- **v1.4**: 场景化氛围音乐。升级 `AudioManager` 支持多音轨；在 `Monitor` 中解耦提醒、休息与反思阶段的音乐表现，实现沉浸式反思。
+- **v1.5**: 深度解耦配置。将音频参数（音轨、音量）整合为 JSON 对象；引入 `test` 专属 Profile，实现测试模式与正式环境的参数化隔离。
+---
+
+## 9. 特色功能：多阶段场景音乐 (Scenario Audio)
+
+系统通过 `audio.py` 实现了基于状态的背景音乐切换，增强了心理暗示的区分度：
+
+| 阶段 | 状态 | 音乐类型 | 功能描述 |
+|------|------|----------|----------|
+| **提醒阶段** | `PROMPT` | 提醒歌曲 (A) | 唤回用户注意力，提示准备休息 |
+| **休息阶段** | `BREAK` | 提醒歌曲 (A) | 延续提醒氛围，进行倒计时身体活动 |
+| **反思阶段** | `ANSWER_INPUT` | 反思歌曲 (B) | 切换至专注/宁静旋律，引导深度思考录入 |
+
+**实现机制**: `Monitor` 作为调度者，通过回调函数机制监听 `ReminderWindow` 的 UI 事件。当 UI 进度从倒计时转入回答框展示时，触发 `on_reflection_start` 回调，完成音轨的热切换。
