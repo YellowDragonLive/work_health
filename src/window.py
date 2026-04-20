@@ -43,14 +43,16 @@ class ReminderWindow:
         self.root.protocol("WM_DELETE_WINDOW", self.force_close)
 
         self.root.attributes("-topmost", True)
-        self.root.attributes("-alpha", 0.96)
+        self.root.attributes("-alpha", 0.98)
         self.root.attributes("-fullscreen", True)
         self.root.configure(bg=_C.BG_VOID)
 
-        _accent_bar(self.root, _C.AMBER, height=3)
+        # 顶部极简装饰条
+        _accent_bar(self.root, _C.AMBER, height=4)
 
-        self.main_container = tk.Frame(self.root, bg=_C.BG_VOID)
-        self.main_container.place(relx=0.5, rely=0.5, anchor=tk.CENTER)
+        # 全屏主容器 (Matrix)
+        self.main_container = tk.Frame(self.root, bg=_C.BG_VOID, padx=80, pady=40)
+        self.main_container.pack(fill=tk.BOTH, expand=True)
 
         self.lbl_msg = tk.Label(
             self.main_container,
@@ -60,19 +62,19 @@ class ReminderWindow:
             bg=_C.BG_VOID,
             wraplength=1000,
         )
-        self.lbl_msg.pack(pady=(40, 50))
+        self.lbl_msg.pack(pady=(60, 60))
 
         self.frame_btns = tk.Frame(self.main_container, bg=_C.BG_VOID)
         self.frame_btns.pack(pady=20)
 
-        self.btn_rest = _make_button(self.frame_btns, "🧘  开始休息", self._handle_start_rest, bg=_C.GREEN_DEEP, hover_bg=_C.GREEN)
-        self.btn_rest.pack(side=tk.LEFT, padx=20)
+        self.btn_rest = _make_button(self.frame_btns, "🧘  立即进入休息模式", self._handle_start_rest, bg=_C.GREEN_DEEP, hover_bg=_C.GREEN, padx=40, pady=15)
+        self.btn_rest.pack(side=tk.LEFT, padx=30)
 
-        self.btn_snooze = _make_button(self.frame_btns, "⏰  推迟 5 分钟", self._handle_snooze, bg=_C.AMBER_DEEP, hover_bg=_C.AMBER)
-        self.btn_snooze.pack(side=tk.LEFT, padx=20)
+        self.btn_snooze = _make_button(self.frame_btns, "⏰  稍后 (5分钟)", self._handle_snooze, bg=_C.AMBER_DEEP, hover_bg=_C.AMBER, padx=40, pady=15)
+        self.btn_snooze.pack(side=tk.LEFT, padx=30)
 
-        self.btn_hide = _make_button(self.main_container, "处理其他事务 · 暂时隐藏 15 秒 [Esc]", self._handle_hide, bg=_C.BG_OVERLAY, hover_bg=_C.BG_HOVER, fg=_C.FG_DIM, font=_F.BTN_SM, padx=24, pady=10)
-        self.btn_hide.pack(pady=(40, 0))
+        self.btn_hide = _make_button(self.main_container, "暂时隐藏 15 秒 [Esc]", self._handle_hide, bg=_C.BG_OVERLAY, hover_bg=_C.BG_HOVER, fg=_C.FG_DIM, font=_F.BTN_SM, padx=24, pady=10)
+        self.btn_hide.pack(pady=(60, 0))
 
         self.root.bind("<Escape>", lambda e: self._handle_hide())
         self.root.lift()
@@ -82,39 +84,43 @@ class ReminderWindow:
         if self.is_closed: return
         if self.on_start_rest: self.on_start_rest()
 
-        self.btn_rest.pack_forget()
-        self.btn_snooze.pack_forget()
-        self.btn_hide.pack_forget()
         self.frame_btns.pack_forget()
+        self.btn_hide.pack_forget()
 
-        self.lbl_msg.config(font=_F.H1)
-        self.lbl_msg.pack_configure(pady=(10, 15))
+        self.lbl_msg.config(font=_F.H1, text="Rest & Reflect . 休息与自省")
+        self.lbl_msg.pack_configure(pady=(20, 30))
 
-        self.three_col_frame = tk.Frame(self.main_container, bg=_C.BG_VOID)
-        self.three_col_frame.pack(fill=tk.BOTH, expand=True, padx=30, pady=10)
+        # 核心三栏 Matrix 布局
+        self.matrix_frame = tk.Frame(self.main_container, bg=_C.BG_VOID)
+        self.matrix_frame.pack(fill=tk.BOTH, expand=True)
 
-        # --- 三栏模块化加载 ---
-        LeftTipPanel(self.three_col_frame, mode_name=self.mode_name)
+        # --- 左侧: 人生游戏 (固定宽) ---
+        LeftTipPanel(self.matrix_frame, mode_name=self.mode_name)
         
-        self.center_frame = tk.Frame(self.three_col_frame, bg=_C.BG_VOID)
-        self.center_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 12))
-        self._build_center_question()
+        # --- 右侧: 生理指标 (固定宽，先 pack 右侧) ---
+        self.health_panel = RightHealthPanel(self.matrix_frame)
 
-        self.health_panel = RightHealthPanel(self.three_col_frame)
+        # --- 中间: 核心交互仓 (动态拉伸) ---
+        self.center_frame = tk.Frame(self.matrix_frame, bg=_C.BG_VOID, padx=40)
+        self.center_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self._build_center_question()
 
     def _build_center_question(self):
         if self.question:
+            # 使用 Modern Card 感官
             card_wrapper = tk.Frame(self.center_frame, bg=_C.BORDER, padx=1, pady=1)
-            card_wrapper.pack(fill=tk.X, pady=(0, 20))
-            q_card = tk.Frame(card_wrapper, bg=_C.BG_SURFACE, padx=30, pady=25)
+            card_wrapper.pack(fill=tk.X, pady=(10, 30))
+            q_card = tk.Frame(card_wrapper, bg=_C.BG_SURFACE, padx=40, pady=35)
             q_card.pack(fill=tk.BOTH)
 
-            tk.Label(q_card, text="💭 此刻思考", font=_F.H3, fg=_C.AMBER, bg=_C.BG_SURFACE).pack(anchor=tk.W, pady=(0, 12))
+            tk.Label(q_card, text="💭 DEEP REFLECTION · 深度思考", font=_F.H3, fg=_C.AMBER, bg=_C.BG_SURFACE).pack(anchor=tk.W, pady=(0, 20))
+            
             en_frame = tk.Frame(q_card, bg=_C.BG_SURFACE)
-            en_frame.pack(fill=tk.X, pady=(0, 10))
-            tk.Frame(en_frame, bg=_C.BLUE, width=3).pack(side=tk.LEFT, fill=tk.Y, padx=(0, 14))
-            tk.Label(en_frame, text=self.question["en"], font=_F.EN_TITLE, fg=_C.FG, bg=_C.BG_SURFACE, wraplength=620, justify=tk.LEFT, anchor=tk.W).pack(side=tk.LEFT, fill=tk.X, expand=True)
-            tk.Label(q_card, text=self.question["zh"], font=_F.H2, fg=_C.FG_DIM, bg=_C.BG_SURFACE, wraplength=650, justify=tk.LEFT, anchor=tk.W).pack(fill=tk.X, pady=(0, 5))
+            en_frame.pack(fill=tk.X, pady=(0, 15))
+            tk.Frame(en_frame, bg=_C.BLUE, width=4).pack(side=tk.LEFT, fill=tk.Y, padx=(0, 20))
+            tk.Label(en_frame, text=self.question["en"], font=_F.EN_TITLE, fg=_C.FG, bg=_C.BG_SURFACE, wraplength=650, justify=tk.LEFT, anchor=tk.W).pack(side=tk.LEFT, fill=tk.X, expand=True)
+            
+            tk.Label(q_card, text=self.question["zh"], font=_F.H2, fg=_C.FG_DIM, bg=_C.BG_SURFACE, wraplength=700, justify=tk.LEFT, anchor=tk.W).pack(fill=tk.X, pady=(10, 5))
 
         if self.duration_seconds > 0:
             self._circle_timer = _CircleTimer(self.center_frame, size=200, line_w=5, bg=_C.BG_VOID)

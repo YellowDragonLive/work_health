@@ -12,45 +12,45 @@ class RightHealthPanel:
         
         # 外壳
         self.wrapper = tk.Frame(parent, bg=_C.BORDER, padx=1, pady=1)
-        self.wrapper.pack(side=tk.RIGHT, fill=tk.Y)
+        self.wrapper.pack(side=tk.RIGHT, fill=tk.Y, padx=(15, 0)) # 增加与边缘的距离
 
-        self.container = tk.Frame(self.wrapper, bg=_C.BG_SURFACE, padx=25, pady=25, width=300)
+        self.container = tk.Frame(self.wrapper, bg=_C.BG_SURFACE, padx=32, pady=28, width=420)
         self.container.pack(fill=tk.BOTH, expand=True)
         self.container.pack_propagate(False)
 
-        _accent_bar(self.container, _C.CYAN, height=2, pady=(0, 12))
+        _accent_bar(self.container, _C.CYAN, height=3, pady=(0, 20))
 
         tk.Label(
             self.container,
-            text="📊 身体状态",
-            font=_F.H3,
+            text="📊 身体健康指标",
+            font=_F.H2,
             fg=_C.CYAN,
             bg=_C.BG_SURFACE,
-        ).pack(anchor=tk.W, pady=(0, 20))
+        ).pack(anchor=tk.W, pady=(0, 28))
 
         self.entries = {}
-        self.entries["weight"] = self._create_row("体重 (kg)")
-        self.entries["bp_high"] = self._create_row("收缩压 (H)")
-        self.entries["bp_low"] = self._create_row("舒张压 (L)")
-        self.entries["heart_rate"] = self._create_row("心率 (BPM)")
+        self.entries["weight"] = self._create_row("体重数据 (kg)")
+        self.entries["bp_high"] = self._create_row("收缩压 High (mmHg)")
+        self.entries["bp_low"] = self._create_row("舒张压 Low (mmHg)")
+        self.entries["heart_rate"] = self._create_row("实时心率检测 (BPM)")
 
         self._load_placeholders()
 
         tk.Label(
             self.container,
-            text="💡 每次休息记录的数据都会被平滑记录，建议每日定时追踪。",
-            font=_F.TINY,
+            text="提示: 每次休息记录的数据都会被平滑存储。建议每日定时追踪，建立长效生理档案。",
+            font=_F.BODY,
             fg=_C.FG_MUTED,
             bg=_C.BG_SURFACE,
-            wraplength=220,
+            wraplength=360, # 配合 420 宽度
             justify=tk.LEFT,
-        ).pack(side=tk.BOTTOM, pady=10)
+        ).pack(side=tk.BOTTOM, pady=20)
 
     def _create_row(self, label):
         row = tk.Frame(self.container, bg=_C.BG_SURFACE)
-        row.pack(fill=tk.X, pady=10)
+        row.pack(fill=tk.X, pady=14) # 增加行间距
         tk.Label(
-            row, text=label, font=_F.BODY,
+            row, text=label, font=_F.BODY_LG, # 提升到 BODY_LG
             fg=_C.FG, bg=_C.BG_SURFACE,
         ).pack(side=tk.LEFT)
         ent = tk.Entry(
@@ -62,7 +62,7 @@ class RightHealthPanel:
             highlightbackground=_C.BORDER,
             highlightcolor=_C.BLUE,
         )
-        ent.pack(side=tk.RIGHT, ipady=4)
+        ent.pack(side=tk.RIGHT, ipady=6) # 增加输入框高度
 
         ent._placeholder = ""
         ent._is_placeholder = False

@@ -21,56 +21,104 @@
 
 ---
 
-## 2. 系统架构总览
+## 2. 系统架构总览 (System Architecture)
 
 ```mermaid
 graph TB
-    subgraph "主线程 - Tkinter mainloop"
-        TK_ROOT["tk_root<br>隐藏的 Tk 根窗口"]
-        GUI_QUEUE["gui_queue<br>GUI 任务队列<br>queue.Queue"]
-        PROCESS_LOOP["process_gui_queue<br>100ms 轮询消费"]
-        VIEW["view.py<br>UI 入口总线"]
-        WINDOW["window.py<br>ReminderWindow 主框架"]
+    subgraph "主线程 (GUI Thread - Tkinter)"
+        TK_ROOT["Tkinter Root<br/>隐藏根窗口/生命周期管理"]
+        GUI_QUEUE["gui_queue<br/>多线程安全任务队列"]
+        VIEW["view.py<br/>UI 入口总线"]
+        WINDOW["window.py<br/>ReminderWindow<br/>三栏布局调度中心"]
+        UI_L["ui_left.py<br/>人生游戏提示面板"]
+        UI_R["ui_right.py<br/>生理指标录入面板"]
+        THEME["theme.py<br/>视觉令牌/Token"]
+        
+        WINDOW --- UI_L
+        WINDOW --- UI_R
+        WINDOW --- THEME
     end
     
-    subgraph "后台线程 1"
-        MONITOR["monitor.py<br>Monitor 状态机"]
-        AUDIO["audio.py<br>AudioManager"]
+    subgraph "核心后台线程 (Logic Thread - Monitor)"
+        MONITOR["monitor.py<br/>FSM 状态机控制器"]
+        DETECTOR["Activity Detector<br/>系统锁定/空闲感应"]
+        AUDITOR["Profile Auditor<br/>动态策略实时巡检"]
+        
+        MONITOR --> DETECTOR
+        MONITOR --> AUDITOR
     end
     
-    subgraph "后台线程 2"
-        TRAY["pystray<br>系统托盘图标"]
-        REFRESH["refresh_loop<br>1s 状态刷新"]
+    subgraph "外围子系统 (Services)"
+        TRAY["pystray<br/>系统托盘 & 快捷操作"]
+        AUDIO["audio.py<br/>AudioManager<br/>多阶段背景音控制"]
     end
     
-    subgraph "数据层"
-        CONFIG["config.json<br>动态策略集 (Profiles)<br>含 audio/test 专用配置"]
-        HEALTH["health_data.json<br>健康数据"]
-        JOURNAL["journal_data.json<br>自省记录"]
-        QUESTIONS["questions.py<br>问题库"]
+    subgraph "持久化层 (Persistence)"
+        CONFIG["config.json<br/>单源事实模式配置"]
+        STORAGE["JSON Data<br/>health/journal"]
     end
 
-    TRAY -->|菜单操作放入| GUI_QUEUE
-    MONITOR -->|巡检触发更新| CONFIG
-    MONITOR -->|弹窗请求注入 Mode| GUI_QUEUE
-    GUI_QUEUE -->|主线程消费| PROCESS_LOOP
-    PROCESS_LOOP -->|调用| VIEW
-    VIEW -->|实例化| WINDOW
-    WINDOW -->|挂载并显示 Mode| UI_LEFT["ui_left.py<br>提示面板"]
-    WINDOW -->|挂载| UI_RIGHT["ui_right.py<br>健康面板"]
-    WINDOW -->|使用| THEME["theme.py<br>视觉令牌"]
-    WINDOW -->|使用| COMPONENTS["components.py<br>原子组件"]
-    MONITOR --> AUDIO
-    MONITOR -->|读写| JOURNAL
-    WINDOW -->|读写| HEALTH
-    WINDOW -->|读取| QUESTIONS
-    CONFIG -->|加载| MONITOR
-    TK_ROOT --> PROCESS_LOOP
+    %% 交互链路
+    TRAY -- "菜单指令" --> GUI_QUEUE
+    MONITOR -- "UI 唤起/销毁请求" --> GUI_QUEUE
+    GUI_QUEUE -- "主循环消费" --> VIEW
+    VIEW -- "挂载/卸载" --> WINDOW
+    MONITOR -- "状态回调" --> AUDIO
+    WINDOW -- "数据持久化" --> STORAGE
+    AUDITOR -- "热加载" --> CONFIG
+    CONFIG -- "驱动策略" --> MONITOR
 ```
 
 ---
 
-## 3. 核心组件 (Core Components)
+## 3. 核心逻辑状态机 (State Machine Lifecycle)
+
+系统核心由 `monitor.py` 驱动的状态机控制，结合了 **动态时长巡检** 和 **生理感测隔离**。
+
+```mermaid
+stateDiagram-v2
+    [*] --> WORK_INIT: 应用启动
+    
+    state WORK_INIT {
+        [*] --> Checking: 加载当前时间 Profile
+        Checking --> Running: 启动工作倒计时
+    }
+
+    state WORK_PHASE {
+        Running: 正常计时中
+        Idle_Paused: 已感应到空闲/锁定 (暂停)
+        Running --> Idle_Paused: 系统锁定或 3min 无操作
+        Idle_Paused --> Running: 用户回归
+    }
+    
+    WORK_INIT --> WORK_PHASE
+    
+    WORK_PHASE --> PROMPT: 工作时长达到 Profile 阈值
+    
+    state PROMPT {
+        [*] --> Waiting: 悬浮窗/通知提醒
+        Waiting --> SNOOZE: 用户点击"稍后"
+        Waiting --> BREAK: 用户点击"开始休息"
+        Waiting --> BREAK: 30s 无操作自动进入休息
+    }
+    
+    SNOOZE --> WORK_PHASE: 延时结束后回归
+    
+    state BREAK_PHASE {
+        Countdown: 身体活动/饮水 (提醒音乐)
+        Reflection: 深度自省/录入 (反思音乐)
+        
+        [*] --> Countdown
+        Countdown --> Reflection: 倒计时结束
+        Reflection --> Done: 提交数据并关闭
+    }
+    
+    BREAK_PHASE --> WORK_INIT: `done_event` 触发
+```
+
+---
+
+## 4. 核心组件说明 (Core Components)
 
 - **`main.py`**: 应用程序入口，管理线程初始化与单例锁。
 - **`monitor.py`**: 核心逻辑引擎，处理计时、状态切换与系统活动检测。
@@ -171,9 +219,29 @@ work_health/
 - **v1.3**: 策略化编排 (Profile-Based)。引入时间巡检逻辑与虚拟时间模拟；移除冗余的手动时长设定 UI，实现“单源事实”配置驱动。
 - **v1.4**: 场景化氛围音乐。升级 `AudioManager` 支持多音轨；在 `Monitor` 中解耦提醒、休息与反思阶段的音乐表现，实现沉浸式反思。
 - **v1.5**: 深度解耦配置。将音频参数（音轨、音量）整合为 JSON 对象；引入 `test` 专属 Profile，实现测试模式与正式环境的参数化隔离。
+- **v1.6**: **视觉规格大革命 (Dashboard Era)**。
+    - **三栏矩阵布局**: 放弃居中浮窗，转向全屏仪表盘布局。
+    - **非对称加厚侧栏**: 指令驱动加宽侧栏（左 450px / 右 420px），强化“侧边指挥塔”感，缩减中心区域换行宽度以提升凝聚力。
+    - **全局字号平衡**: 重构 `theme.py` 字体令牌，全线提升字号等级，解决“字太小”的可读性痛点。
+    - **Modern Card 感官**: 所有交互区域采用 1px 微光边框 (`BG_VOID` + `BORDER`) 的卡片封装。
+
 ---
 
-## 9. 特色功能：多阶段场景音乐 (Scenario Audio)
+## 9. 特色布局：全屏可视化矩阵 (Fullscreen Matrix)
+
+系统在 v1.6 引入了基于全屏比例的布局逻辑：
+
+| 区域 | 宽度规格 | 核心职责 | 视觉表现 |
+|------|----------|----------|----------|
+| **左侧面板** | `450px` (固定) | 人生游戏系统 6 组件 | 超宽展示，支持长文本阅读 |
+| **中心舞台** | `Expand` (动态) | 计时器/深度自省/输入 | 文字包裹收紧至 `650-700px` 焦点区 |
+| **右侧面板** | `420px` (固定) | 生理健康指标监控 | 宽阔的录入区域，仪表盘视觉 |
+
+**设计理念**: 模拟高端驾驶舱视觉，两翼提供全量背景信息流，中心提供任务相关的精确深度交互。
+
+---
+
+## 10. 特色功能：多阶段场景音乐 (Scenario Audio)
 
 系统通过 `audio.py` 实现了基于状态的背景音乐切换，增强了心理暗示的区分度：
 
