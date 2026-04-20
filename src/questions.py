@@ -8,6 +8,7 @@
 """
 
 import random
+import logging
 from datetime import datetime
 
 
@@ -432,13 +433,16 @@ def get_question_by_id(question_id):
 
 
 if __name__ == "__main__":
+    # 配置基础日志供独立测试用
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    
     # 快速测试
-    print(f"当前阶段: {get_phase_by_time()}")
+    logging.info(f"当前阶段: {get_phase_by_time()}")
     q = pick_random_question()
-    print(f"\n随机问题 [{q['id']}]:")
-    print(f"  EN: {q['en']}")
-    print(f"  ZH: {q['zh']}")
-    print(f"\n总计问题数: {len(ALL_QUESTIONS)}")
-    print(f"  早晨: {len(MORNING_QUESTIONS)}")
-    print(f"  全天: {len(DAYTIME_QUESTIONS)}")
-    print(f"  晚间: {len(EVENING_QUESTIONS)}")
+    logging.info(f"\n随机问题 [{q['id']}]:")
+    logging.info(f"  EN: {q['en']}")
+    logging.info(f"  ZH: {q['zh']}")
+    logging.info(f"\n总计问题数: {len(ALL_QUESTIONS)}")
+    logging.info(f"  早晨: {len(MORNING_QUESTIONS)}")
+    logging.info(f"  全天: {len(DAYTIME_QUESTIONS)}")
+    logging.info(f"  晚间: {len(EVENING_QUESTIONS)}")

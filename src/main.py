@@ -200,22 +200,31 @@ def main():
         }
 
     # 音乐路径发现逻辑
+    # 音乐路径发现与纠正逻辑
+    root_dir = os.path.dirname(BASE_DIR)
     audio_cfg = config["audio"]
-    if not audio_cfg.get("reminder_rest_path"):
-        default_p = os.path.join(
-            os.path.dirname(BASE_DIR), "Bonus Track04.炎と永远——罗德岛战记1OP.mp3"
-        )
-        if os.path.exists(default_p):
-            audio_cfg["reminder_rest_path"] = default_p
 
-    if not audio_cfg.get("reflection_path"):
-        default_r = os.path.join(
-            os.path.dirname(BASE_DIR), "17.Tune the rainbow——翼神传说多元变奏曲.mp3"
-        )
-        if os.path.exists(default_r):
-            audio_cfg["reflection_path"] = default_r
+    def resolve_audio_path(cfg_key, default_filename):
+        current_p = audio_cfg.get(cfg_key)
+        # 如果路径为空，或路径不合法且非绝对路径
+        if not current_p or not os.path.exists(current_p):
+            potential_p = os.path.join(root_dir, current_p if current_p else default_filename)
+            if os.path.exists(potential_p):
+                logging.info(f"Resolved audio path for {cfg_key}: {potential_p}")
+                audio_cfg[cfg_key] = potential_p
+            else:
+                # 尝试使用硬编码的默认文件名
+                fallback_p = os.path.join(root_dir, default_filename)
+                if os.path.exists(fallback_p):
+                    logging.info(f"Fallback to default audio path for {cfg_key}: {fallback_p}")
+                    audio_cfg[cfg_key] = fallback_p
+                else:
+                    logging.warning(f"Could not find music file for {cfg_key}: {default_filename}")
+
+    resolve_audio_path("reminder_rest_path", "Bonus Track04.炎と永远——罗德岛战记1OP.mp3")
+    resolve_audio_path("reflection_path", "17.Tune the rainbow——翼神传说多元变奏曲.mp3")
             
-    # 持久化自动发现的路径
+    # 持久化经过验证/更正的路径
     save_config(config)
 
     if is_test_mode:
@@ -299,6 +308,6 @@ def main():
 if __name__ == "__main__":
     hide_console()
     if not os.path.exists(ASSETS_DIR):
-        print("Assets not found. Run generate_assets.py first.")
+        logging.error("Assets not found. Run generate_assets.py first.")
     else:
         main()

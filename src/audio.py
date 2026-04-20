@@ -12,7 +12,7 @@ class AudioManager:
             pygame.mixer.init()
             self._is_initialized = True
         except Exception as e:
-            print(f"Audio init failed: {e}")
+            logging.error(f"Audio init failed: {e}")
             self._is_initialized = False
 
     def set_music(self, path):
@@ -29,7 +29,7 @@ class AudioManager:
 
         target = path or self._current_music_path
         if not target or not os.path.exists(target):
-            print(f"Music file not found: {target}")
+            logging.error(f"Music file not found: {target}")
             return
 
         try:
@@ -38,7 +38,7 @@ class AudioManager:
             if path:
                 self._current_music_path = path
         except Exception as e:
-            print(f"Error playing music: {e}")
+            logging.error(f"Error playing music: {e}")
 
     def stop(self):
         """Stops playback."""
