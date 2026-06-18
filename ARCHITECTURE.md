@@ -5,9 +5,10 @@
 | 维度 | 详细内容 |
 | :--- | :--- |
 | **项目名称** | Work Health (久坐健康助手) |
-| **核心技术栈** | Python 3.x, Tkinter, Pygame (Audio), Pystray (Tray), JSON |
+| **核心技术栈** | Python 3.10, Tkinter, Pygame (Audio), Pystray (Tray), JSON |
+| **运行环境** | conda env `work_health`（隔离依赖，避免多 Python 共存的 user site 污染） |
 | **核心价值** | 🛡️ 保护开发者生理健康，通过“人生游戏”框架实现长期生产力与心理自省的平衡。 |
-| **最后更新** | 2026-04-21 |
+| **最后更新** | 2026-06-18 |
 
 ### 核心功能点
 *   🎮 **人生游戏引擎**: 基于 Dan Koe 哲学，通过 `life_game.json` 配置 6 大核心组件（愿景/反愿景等）。
@@ -60,7 +61,7 @@ graph TB
     *   **职责**：管理全屏沉浸式体验；编排左（人生游戏）、右（生理指标）、中（计时与问答）三个核心仓的布局。
     *   **关键接口**：通过 `on_answer` 回调将数据传回逻辑层。
 *   **Audio Manager (audio.py)**
-    *   **职责**：处理音频加载、路径自愈（将相对路径转换为绝对路径）、跨状态背景音切换。
+    *   **职责**：处理音频加载、路径自愈（将相对路径转换为绝对路径）、跨状态背景音切换；每个阶段（工作/休息/提示）音乐只播放一次，避免重复播放干扰用户体验。
 *   **Config Manager (config_manager.py)**
     *   **职责**：统一负责全系统 4 个 JSON 文件的 I/O。
 
@@ -108,6 +109,7 @@ sequenceDiagram
 *   **可靠性 (Reliability)**：
     *   **路径自愈**：启动时自动扫描音频文件是否存在，若配置失效则基于 `root` 目录进行搜索重定向。
     *   **端口抢占**：通过强制杀掉端口占用者，确保应用永远能够更新重启，不会死锁在后台。
+    *   **音频防重复播放**：每个阶段（工作/休息/提示）的音乐仅播放一次，状态切换时重置播放状态，避免循环播放干扰用户专注。
 *   **性能优化 (Performance)**：
     - **非阻塞 I/O**：日志写入和音频播放均在独立线程或异步方式处理，不影响 UI 刷新。
     - **资源懒加载**：大文件（如自省记录）仅在保存或特定查询时加载。
@@ -131,8 +133,10 @@ work_health/
 │   └── window.py           # 全屏提醒核心组件
 ├── config.json             # 系统运行时配置
 ├── life_game.json          # 人生游戏 6 组件 (用户编辑)
-├── app.log                 # 运行日志 (UTF-8)
-└── main.py                 # 启动入口 (进程管理器)
+├── app.log                 # 运行日志 (UTF-8, gitignored)
+├── main.py                 # 启动入口 (进程管理器)
+├── work_health_start.bat   # 正式启动脚本 (绑定 conda env)
+└── run_test_mode.bat       # 测试模式启动脚本 (1分钟工作/10秒休息)
 ```
 
 ---
@@ -140,8 +144,34 @@ work_health/
 ## 8. 演进路线图 (Roadmap)
 
 *   **v1.0 (MVP)**: 基础计时与弹窗。
-*   **v1.x (Current)**: 引入人生游戏框架、抢占式启动流、动态番茄钟策略。
+*   **v1.x (Current)**: 引入人生游戏框架、抢占式启动流、动态番茄钟策略、音频防重复播放、conda env 环境隔离。
 *   **v2.0 (Planned)**: 
     - 引入可视化图表（体重/血压/专注度趋势）。
     - 增加基于人生游戏的进度条视觉系统。
     - 支持 Obsidian 同步插件直读 journal 数据。
+
+---
+
+## 9. 环境隔离设计 (Environment Isolation)
+
+### 问题背景
+
+Windows 多 Python 共存时（Miniconda base + 独立安装版 + hermes venv 等），`pip install` 可能落到全局 user site (`%APPDATA%\Python\Python310\site-packages`)，导致：
+- 不同 Python 共享同一份第三方包，DLL 版本交叉加载即崩溃
+- base env 的 Python 启动时加载 user site 的坏 DLL（onnxruntime 崩溃的根因）
+
+### 解决方案
+
+| 层级 | 措施 | 实现位置 |
+|---|---|---|
+| 系统 | `PYTHONNOUSERSITE=1`（User + Machine 环境变量）| Windows 环境变量 |
+| Conda | `conda env config vars set -n base PYTHONNOUSERSITE=1` | conda-meta/state |
+| 项目 | 独立 conda env `work_health`，所有依赖装入此 env | `conda create -n work_health` |
+| 启动 | `work_health_start.bat` 硬编码 env 的 python.exe 绝对路径 | 项目根目录 |
+| 自启 | `utils.py` 的 `WORK_HEALTH_ENV_PYTHONW` 常量绑定 env 的 pythonw.exe | `src/utils.py` |
+
+### 关键约束
+
+- **开机自启**：注册表 `HKCU\...\Run\HealthAssistant` 的值必须指向 `work_health` env 的 `pythonw.exe`，而非 base。base 未装 pystray，开机必崩。
+- **路径硬编码**：`WORK_HEALTH_ENV_PYTHONW = r"C:\Users\<用户名>\.conda\envs\work_health\pythonw.exe"`。如迁移 env 或换用户，需同步更新此常量。
+- **依赖安装**：必须用 `conda install -n work_health -c conda-forge <pkg>`，不用全局 `pip install`。pygame 的 conda-forge 版有 DLL 初始化问题，改用 `pip install pygame`（在 env 内）。

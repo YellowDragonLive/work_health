@@ -16,7 +16,6 @@ src/assets/icon.png
 *.mp3
 *.wav
 
-
 # IDEs
 .vscode/
 .idea/
@@ -31,3 +30,13 @@ progress.json
 # Scratch and temporary scripts
 scratch/
 artifacts/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Env
+.env
+.env.local
+*.log

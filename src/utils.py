@@ -9,6 +9,11 @@ import time
 AUTOSTART_APP_NAME = "HealthAssistant"
 AUTOSTART_KEY_PATH = r"Software\Microsoft\Windows\CurrentVersion\Run"
 
+# 开机自启动必须使用 work_health conda env 的 pythonw.exe。
+# 不能用 sys.executable —— 它可能是 base 或其他 env，base 没装 pystray 会导致开机自启崩溃。
+# 如迁移 conda env 或换用户，需同步更新此路径。
+WORK_HEALTH_ENV_PYTHONW = r"C:\Users\13410\.conda\envs\work_health\pythonw.exe"
+
 def hide_console():
     """Ensure the application runs without a console window."""
     # 防止递归：如果已经带有 --nowindow，说明是子进程
@@ -47,11 +52,20 @@ def set_autostart(enable=True):
     try:
         key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, AUTOSTART_KEY_PATH, 0, winreg.KEY_SET_VALUE)
         if enable:
-            exe_path = sys.executable
-            target_exe = exe_path.replace("python.exe", "pythonw.exe")
+            # 固定使用 work_health conda env 的 pythonw.exe
+            # 不能用 sys.executable —— base env 没装 pystray，开机自启会崩溃
+            target_exe = WORK_HEALTH_ENV_PYTHONW
             if not os.path.exists(target_exe):
-                target_exe = exe_path
-                
+                # fallback：env 路径失效时回退到当前解释器对应的 pythonw
+                logging.warning(
+                    f"WORK_HEALTH_ENV_PYTHONW not found: {target_exe}. "
+                    f"Falling back to sys.executable-based pythonw (may crash on boot if pystray missing)."
+                )
+                exe_path = sys.executable
+                target_exe = exe_path.replace("python.exe", "pythonw.exe")
+                if not os.path.exists(target_exe):
+                    target_exe = exe_path
+
             script_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "main.py"))
             cmd = f'"{target_exe}" "{script_path}"'
             winreg.SetValueEx(key, AUTOSTART_APP_NAME, 0, winreg.REG_SZ, cmd)

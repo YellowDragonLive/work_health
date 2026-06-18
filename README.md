@@ -43,23 +43,52 @@
 
 ### 1. 安装要求
 - Windows 10/11
-- Python 3.8+
-- 安装依赖：`pip install pygame pystray Pillow`
+- Miniconda / Anaconda（推荐）或 Python 3.10+
+- 独立 conda 环境隔离依赖，避免污染全局 Python
 
-### 2. 初始化与运行
+### 2. 环境准备（首次安装）
 ```bash
-# 生成默认图标与提示音
-python generate_assets.py
+# 创建独立 conda 环境（Python 3.10）
+conda create -n work_health python=3.10
 
-# 启动程序
+# 安装依赖（conda-forge 优先，DLL 兼容性更好）
+conda install -n work_health -c conda-forge pystray pillow
+conda install -n work_health -c conda-forge pygame
+```
+
+> **为什么用 conda env 而非全局 pip？**
+> Windows 多 Python 共存时，`pip install` 可能落到 user site 导致 DLL 交叉加载崩溃。conda env 沙盒化依赖，彻底隔离。详见 [ARCHITECTURE.md](ARCHITECTURE.md) §9。
+
+### 3. 初始化与运行
+```bash
+# 生成默认图标与提示音（仅需执行一次）
+conda run -n work_health python generate_assets.py
+
+# 启动程序（二选一）
+#   方式 A：双击 bat（推荐，自动定位 env）
+work_health_start.bat
+
+#   方式 B：激活 env 后运行
+conda activate work_health
 python src/main.py
 ```
 
-### 3. 测试模式
+### 4. 开机自启
+程序运行后，在系统托盘图标右键菜单点击 **"启用开机自启"**。注册表项将写入：
+```
+HKCU\Software\Microsoft\Windows\CurrentVersion\Run\HealthAssistant
+  → "C:\Users\<用户名>\.conda\envs\work_health\pythonw.exe" "...\src\main.py"
+```
+
+> 自启动路径在 `src/utils.py` 的 `WORK_HEALTH_ENV_PYTHONW` 常量中硬编码为 work_health env 的 pythonw。如迁移 env 或换用户，需同步更新此常量。
+
+### 5. 测试模式
 如果想快速预览流程（1分钟工作，10秒休息），请直接运行：
 ```bash
 run_test_mode.bat
 ```
+
+> 测试模式默认使用 PATH 中的 python，需先 `conda activate work_health` 或确保全局 python 有依赖。
 
 ---
 

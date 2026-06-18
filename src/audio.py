@@ -6,6 +6,8 @@ class AudioManager:
     def __init__(self, default_music_path=None):
         self.default_music_path = default_music_path
         self._current_music_path = default_music_path
+        self._last_played_path = None
+        self._is_playing = False
         
         # Initialize mixer
         try:
@@ -22,8 +24,8 @@ class AudioManager:
             return True
         return False
 
-    def play(self, path=None, loops=-1):
-        """Plays music. If path is provided, it updates current music and plays. Loops infinitely by default."""
+    def play(self, path=None, loops=0, force=False):
+        """Plays music once by default. Prevents replaying same music unless force=True."""
         if not self._is_initialized:
             return
 
@@ -32,18 +34,25 @@ class AudioManager:
             logging.error(f"Music file not found: {target}")
             return
 
+        if not force and target == self._last_played_path and self._is_playing:
+            return
+
         try:
             pygame.mixer.music.load(target)
             pygame.mixer.music.play(loops)
+            self._last_played_path = target
+            self._is_playing = True
             if path:
                 self._current_music_path = path
         except Exception as e:
             logging.error(f"Error playing music: {e}")
 
     def stop(self):
-        """Stops playback."""
+        """Stops playback and resets play state."""
         if self._is_initialized:
             pygame.mixer.music.stop()
+            self._is_playing = False
+            self._last_played_path = None
 
     def set_volume(self, volume):
         """Sets volume (0.0 to 1.0)."""

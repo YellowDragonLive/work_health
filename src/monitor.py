@@ -287,7 +287,8 @@ class Monitor:
             logging.error(f"Failed to save journal answer: {e}", exc_info=True)
 
     def on_user_start_rest(self):
-        logging.info("User started rest. Keeping original music.")
+        logging.info("User started rest. Stopping music.")
+        self.audio.stop()
         self.state = "BREAK"
 
     def on_user_start_reflection(self):
