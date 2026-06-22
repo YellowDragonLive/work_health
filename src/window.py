@@ -215,8 +215,12 @@ class ReminderWindow:
     def _cancel_timer(self, attr_name):
         timer_id = getattr(self, attr_name, None)
         if timer_id:
-            try: self.root.after_cancel(timer_id)
-            except: pass
+            try:
+                self.root.after_cancel(timer_id)
+            except tk.TclError:
+                pass  # Timer already fired or was cancelled — safe to ignore
+            except Exception as e:
+                logging.debug(f"after_cancel failed for {attr_name}: {e}")
             setattr(self, attr_name, None)
 
     def force_close(self):
@@ -225,6 +229,10 @@ class ReminderWindow:
         self._cancel_timer("timer_id")
         self._cancel_timer("hide_timer_id")
         if self.root:
-            try: self.root.destroy()
-            except: pass
+            try:
+                self.root.destroy()
+            except tk.TclError:
+                pass  # Root already destroyed — safe to ignore
+            except Exception as e:
+                logging.debug(f"Error destroying root window: {e}")
         if self.on_close: self.on_close()

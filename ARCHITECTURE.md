@@ -8,7 +8,7 @@
 | **核心技术栈** | Python 3.10, Tkinter, Pygame (Audio), Pystray (Tray), JSON |
 | **运行环境** | conda env `work_health`（隔离依赖，避免多 Python 共存的 user site 污染） |
 | **核心价值** | 🛡️ 保护开发者生理健康，通过“人生游戏”框架实现长期生产力与心理自省的平衡。 |
-| **最后更新** | 2026-06-18 |
+| **最后更新** | 2026-06-22 |
 
 ### 核心功能点
 *   🎮 **人生游戏引擎**: 基于 Dan Koe 哲学，通过 `life_game.json` 配置 6 大核心组件（愿景/反愿景等）。
@@ -63,7 +63,8 @@ graph TB
 *   **Audio Manager (audio.py)**
     *   **职责**：处理音频加载、路径自愈（将相对路径转换为绝对路径）、跨状态背景音切换；每个阶段（工作/休息/提示）音乐只播放一次，避免重复播放干扰用户体验。
 *   **Config Manager (config_manager.py)**
-    *   **职责**：统一负责全系统 4 个 JSON 文件的 I/O。
+    *   **职责**：统一负责全系统 4 个 JSON 文件的 I/O。通过 `JsonStore` 类封装：原子写入（`.tmp` → `.bak` → `os.replace`）、模块级 `_io_lock` 文件锁、`migrate_health_data()` schema 迁移、`SCHEMA_VERSION` 版本标记。
+    *   **边界**：所有 load/save 均经过 `_io_lock` 串行化，避免多线程并发写入冲突。
 
 ---
 
@@ -98,9 +99,11 @@ sequenceDiagram
 ## 5. 数据与存储架构 (Data & Storage Architecture)
 
 *   **life_game.json**: 存储人生游戏的长期使命。用户手动编辑，程序只读并在 UI 展示。
-*   **journal_data.json**: 按日期索引存储自省回答。新数据追加在 `answers` 数组中。
-*   **health_data.json**: 按日期存储生理指标快照。支持同一天多次录入。
-*   **持久化策略**：使用 Python 原生 `json` 模块，配置 `ensure_ascii=False` 保证中文字符集原生呈现。
+*   **journal_data.json**: 按日期索引存储自省回答。新数据追加在 `answers` 数组中。保存时写入 `"version": SCHEMA_VERSION`。
+*   **health_data.json**: 按日期存储生理指标快照，统一为 list-of-records 格式。`load_health_data()` 自动调用 `migrate_health_data()` 将旧版 flat-dict 格式转换为 `[dict]` 并强制数值字段为 float。
+*   **原子写入策略**：所有 save 操作经 `JsonStore._atomic_write()` —— 写入 `.tmp` 临时文件 → `shutil.copy2` 旧文件到 `.bak` → `os.replace()` 原子替换。崩溃时 `.bak` 可手动恢复。
+*   **文件锁**：模块级 `_io_lock = threading.Lock()` 在每个 `JsonStore.load()` 和 `_atomic_write()` 中持有，串行化所有文件 I/O。
+*   **编码**：全部使用 `encoding='utf-8'` + `ensure_ascii=False`，保证中文字符集原生呈现。
 
 ---
 
@@ -110,9 +113,15 @@ sequenceDiagram
     *   **路径自愈**：启动时自动扫描音频文件是否存在，若配置失效则基于 `root` 目录进行搜索重定向。
     *   **端口抢占**：通过强制杀掉端口占用者，确保应用永远能够更新重启，不会死锁在后台。
     *   **音频防重复播放**：每个阶段（工作/休息/提示）的音乐仅播放一次，状态切换时重置播放状态，避免循环播放干扰用户专注。
+    *   **状态机线程安全**：`Monitor.self.lock` 保护所有共享状态（`state`/`paused`/`running`/`work_time_remaining`/`completed_rounds`/`mode_name`/`shown_question_ids`），不在 `done_event.wait()` 和 `time.sleep()` 期间持锁。`on_user_snooze()` 直接 SNOOZE→WORK，无中间态竞态窗口。
+    *   **弹窗超时兜底**：`done_event.wait(timeout=300)` 防止 GUI 队列卡死导致 Monitor 线程永久阻塞；超时后强制 `reset_work()` 并记录 `CRITICAL` 日志。
+    *   **文件 I/O 锁**：`config_manager._io_lock` 串行化所有 JSON 读写，避免多线程并发写入冲突。
 *   **性能优化 (Performance)**：
     - **非阻塞 I/O**：日志写入和音频播放均在独立线程或异步方式处理，不影响 UI 刷新。
     - **资源懒加载**：大文件（如自省记录）仅在保存或特定查询时加载。
+*   **错误处理 (Error Handling)**：
+    - 所有原裸 `except: pass` 已替换为具体异常类型（`tk.TclError`/`subprocess.SubprocessError`/`OSError`/`json.JSONDecodeError`）+ 日志记录。
+    - `refresh_loop` 异常时 5s 退避，避免疯狂重试刷屏。
 
 ---
 
@@ -133,6 +142,8 @@ work_health/
 │   └── window.py           # 全屏提醒核心组件
 ├── config.json             # 系统运行时配置
 ├── life_game.json          # 人生游戏 6 组件 (用户编辑)
+├── environment.yml         # conda 环境定义 (conda env create -f)
+├── pytest.ini              # pytest 配置
 ├── app.log                 # 运行日志 (UTF-8, gitignored)
 ├── main.py                 # 启动入口 (进程管理器)
 ├── work_health_start.bat   # 正式启动脚本 (绑定 conda env)
@@ -145,6 +156,13 @@ work_health/
 
 *   **v1.0 (MVP)**: 基础计时与弹窗。
 *   **v1.x (Current)**: 引入人生游戏框架、抢占式启动流、动态番茄钟策略、音频防重复播放、conda env 环境隔离。
+*   **v1.8 (2026-06-22 工程化加固)**: 
+    - 修复 `audio.py` 缺失 `import logging` 的运行时崩溃 bug。
+    - `monitor.py` 启用 `self.lock` 保护所有共享状态（原为死代码）；`done_event.wait()` 加 300s 超时兜底；删除 `on_user_snooze` 的中间 SNOOZE 态竞态窗口；新增 `get_status()` 线程安全访问器。
+    - `config_manager.py` 重构为 `JsonStore` 类：原子写入（`.tmp`→`.bak`→`os.replace`）、模块级 `_io_lock` 文件锁、`migrate_health_data()` schema 迁移、`SCHEMA_VERSION` 版本标记、`ensure_ascii=False` 全统一。
+    - 修复 4 处裸 `except: pass`（`window.py`×2、`utils.py`×1、`main.py`×1），改为具体异常 + 日志。
+    - 新增 `environment.yml`（conda env 定义，pygame 走 pip 规避 DLL 问题）。
+    - 新增 `pytest.ini` + 改造 `test_audio_logic.py` 为 pytest 规范。
 *   **v2.0 (Planned)**: 
     - 引入可视化图表（体重/血压/专注度趋势）。
     - 增加基于人生游戏的进度条视觉系统。

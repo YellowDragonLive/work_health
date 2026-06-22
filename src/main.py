@@ -278,9 +278,10 @@ def main():
             try:
                 icon.title = get_status_text(None)
                 icon.update_menu()
-            except Exception:
-                pass
-            time.sleep(1)
+                time.sleep(1)
+            except Exception as e:
+                logging.warning(f"Tray refresh loop error: {e}", exc_info=True)
+                time.sleep(5)  # Back off on repeated errors
 
     threading.Thread(target=refresh_loop, daemon=True).start()
 

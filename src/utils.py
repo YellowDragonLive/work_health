@@ -119,7 +119,10 @@ def force_kill_all_instances():
                         logging.info(f"清理端口占用进程: {pid}")
                         subprocess.run(['taskkill', '/F', '/T', '/PID', pid], capture_output=True)
                         killed_any = True
-    except: pass
+    except subprocess.SubprocessError as e:
+        logging.warning(f"Port cleanup subprocess failed: {e}")
+    except Exception as e:
+        logging.warning(f"Port cleanup error: {e}", exc_info=True)
 
     if killed_any:
         time.sleep(1.0) # 给系统一点资源回收时间

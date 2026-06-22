@@ -1,0 +1,11 @@
+# Work Health - conda environment spec | recreate with: conda env create -f environment.yml
+name: work_health
+channels:
+  - conda-forge
+dependencies:
+  - python=3.10
+  - pystray
+  - pillow
+  - pip
+  - pip:
+    - pygame

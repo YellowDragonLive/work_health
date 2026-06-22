@@ -116,34 +116,50 @@ class Monitor:
 
         should_pause = locked or (idle_sec >= IDLE_PAUSE_THRESHOLD)
 
-        if should_pause and not self.paused:
-            reason = "Locked" if locked else f"Idle ({int(idle_sec)}s)"
-            logging.info(f"System {reason}. Pausing timer.")
-            self.paused = True
-        elif not should_pause and self.paused:
-            logging.info("User active. Resuming.")
-            self.paused = False
+        with self.lock:
+            if should_pause and not self.paused:
+                reason = "Locked" if locked else f"Idle ({int(idle_sec)}s)"
+                logging.info(f"System {reason}. Pausing timer.")
+                self.paused = True
+            elif not should_pause and self.paused:
+                logging.info("User active. Resuming.")
+                self.paused = False
 
     def run(self):
         """Main loop. Runs in a background thread."""
         logging.info("Monitor thread started.")
-        while self.running:
+        while True:
+            with self.lock:
+                if not self.running:
+                    break
+
             self.check_activity_status()
 
-            if self.paused:
+            with self.lock:
+                paused = self.paused
+
+            if paused:
                 time.sleep(1)
-                self.last_sync_time = time.time()
+                with self.lock:
+                    self.last_sync_time = time.time()
                 continue
 
-            if self.state == "WORK":
-                now = time.time()
-                elapsed = now - self.last_sync_time
-                self.last_sync_time = now
+            with self.lock:
+                state = self.state
+                if state == "WORK":
+                    now = time.time()
+                    elapsed = now - self.last_sync_time
+                    self.last_sync_time = now
+                    remaining = self.work_time_remaining
+                else:
+                    remaining = None
 
-                if self.work_time_remaining > 0:
-                    self.work_time_remaining -= elapsed
-                    if self.work_time_remaining < 0:
-                        self.work_time_remaining = 0
+            if remaining is not None:
+                if remaining > 0:
+                    with self.lock:
+                        self.work_time_remaining -= elapsed
+                        if self.work_time_remaining < 0:
+                            self.work_time_remaining = 0
                     time.sleep(1)
                 else:
                     self.trigger_break()
@@ -185,19 +201,26 @@ class Monitor:
         self.snooze_duration_seconds = 5 * 60
 
     def trigger_break(self):
-        self._refresh_durations()  # 准备进入休息前刷新一次，确保时长准确
-        logging.info(f"Triggering break (Mode: {self.mode_name})...")
+        """Transition from WORK to PROMPT state, show reminder window, and wait for user response."""
+        with self.lock:
+            self._refresh_durations()  # 准备进入休息前刷新一次，确保时长准确
+            self.state = "PROMPT"
+            captured_mode_name = self.mode_name
+            captured_break_duration = self.break_duration_seconds
+
+        logging.info(f"Triggering break (Mode: {captured_mode_name})...")
         pause_all_media()
-        self.state = "PROMPT"
         self.audio.play(self.music_path)
 
         # 挑选一个自省问题
         current_question = None
         try:
             from questions import pick_random_question
-            current_question = pick_random_question(exclude_ids=self.shown_question_ids)
+            with self.lock:
+                current_question = pick_random_question(exclude_ids=self.shown_question_ids)
+                if current_question:
+                    self.shown_question_ids.append(current_question["id"])
             if current_question:
-                self.shown_question_ids.append(current_question["id"])
                 logging.info(f"Selected reflection question: {current_question['id']}")
         except Exception as e:
             logging.error(f"Error picking question: {e}", exc_info=True)
@@ -211,17 +234,18 @@ class Monitor:
 
             try:
                 # 再次检查状态，如果在等待期间被重置了就直接返回
-                if self.state not in ["PROMPT", "BREAK"]:
-                    logging.info(
-                        "State changed before window could be shown, aborting show."
-                    )
-                    done_event.set()
-                    return
+                with self.lock:
+                    if self.state not in ["PROMPT", "BREAK"]:
+                        logging.info(
+                            "State changed before window could be shown, aborting show."
+                        )
+                        done_event.set()
+                        return
 
                 msg = (
                     f"请起身活动"
-                    if self.break_duration_seconds < 60
-                    else f"请起身活动 {self.break_duration_seconds // 60} 分钟！"
+                    if captured_break_duration < 60
+                    else f"请起身活动 {captured_break_duration // 60} 分钟！"
                 )
 
                 def on_close_callback():
@@ -230,14 +254,14 @@ class Monitor:
 
                 show_reminder_process(
                     message=msg,
-                    duration=self.break_duration_seconds,
+                    duration=captured_break_duration,
                     on_rest=self.on_user_start_rest,
                     on_snooze=self.on_user_snooze,
                     on_close=on_close_callback,
                     question=current_question,
                     on_answer=self._save_journal_answer,
                     on_reflection_start=self.on_user_start_reflection, # 新增
-                    mode_name=self.mode_name,
+                    mode_name=captured_mode_name,
                 )
             except Exception as e:
                 logging.error(f"GUI Error in show_window: {e}", exc_info=True)
@@ -248,15 +272,26 @@ class Monitor:
         if self.gui_queue:
             self.gui_queue.put(show_window)
             logging.info("Reminder window task queued. Waiting for user response...")
-            done_event.wait()  # 阻塞 Monitor 线程，等待弹窗关闭
+            if not done_event.wait(timeout=300):
+                logging.critical("Reminder window did not close within 300s. Force-resetting state machine.")
+                self.audio.stop()
+                self.reset_work()
+                return
         else:
             # 降级：没有 gui_queue 时直接调用（不推荐，调试用）
             show_window()
-            done_event.wait()
+            if not done_event.wait(timeout=300):
+                logging.critical("Reminder window did not close within 300s. Force-resetting state machine.")
+                self.audio.stop()
+                self.reset_work()
+                return
 
         # 弹窗关闭后处理状态
-        if self.state in ["PROMPT", "BREAK"]:
-            logging.info(f"Window closed in state {self.state}. Resetting to Work.")
+        with self.lock:
+            should_reset = self.state in ["PROMPT", "BREAK"]
+            if should_reset:
+                logging.info(f"Window closed in state {self.state}. Resetting to Work.")
+        if should_reset:
             self.reset_work()
 
     def _save_journal_answer(self, question_id, answer_text):
@@ -287,35 +322,41 @@ class Monitor:
             logging.error(f"Failed to save journal answer: {e}", exc_info=True)
 
     def on_user_start_rest(self):
+        """Called when user clicks 'Start Rest' in the reminder window."""
         logging.info("User started rest. Stopping music.")
-        self.audio.stop()
-        self.state = "BREAK"
+        with self.lock:
+            self.audio.stop()
+            self.state = "BREAK"
 
     def on_user_start_reflection(self):
+        """Called when user starts typing a reflection answer. Switches to reflection music."""
         logging.info("User started reflection (answering). Switching music.")
         if self.reflection_music_path and os.path.exists(self.reflection_music_path):
             self.audio.play(self.reflection_music_path)
 
     def on_user_snooze(self):
-        logging.info("User snoozed.")
-        self.state = "SNOOZE"
-        self.audio.stop()
-        self.work_time_remaining = self.snooze_duration_seconds
-        self.last_sync_time = time.time()
-        self.state = "WORK"
+        """Called when user clicks 'Snooze' in the reminder window. Resets timer and returns to WORK."""
+        with self.lock:
+            logging.info("User snoozed.")
+            self.audio.stop()
+            self.work_time_remaining = self.snooze_duration_seconds
+            self.last_sync_time = time.time()
+            self.state = "WORK"
 
     def reset_work(self):
-        self.audio.stop()
-        if self.state in ["PROMPT", "BREAK", "SNOOZE"]:
-            resume_all_media()
+        """Reset the state machine back to WORK, incrementing round counter if coming from BREAK."""
+        with self.lock:
+            self.audio.stop()
+            if self.state in ["PROMPT", "BREAK", "SNOOZE"]:
+                resume_all_media()
 
-        if self.state == "BREAK":
-            self.completed_rounds += 1
-        
-        self.state = "WORK"
-        self._refresh_durations()  # 返回工作前巡检，可能已跨过模式边界时间
-        self.work_time_remaining = self.work_duration_minutes * 60
-        self.last_sync_time = time.time()
+            if self.state == "BREAK":
+                self.completed_rounds += 1
+
+            self.state = "WORK"
+            self._refresh_durations()  # 返回工作前巡检，可能已跨过模式边界时间
+            self.work_time_remaining = self.work_duration_minutes * 60
+            self.last_sync_time = time.time()
 
         if self.gui_queue:
 
@@ -344,5 +385,21 @@ class Monitor:
 
 
     def stop(self):
-        self.running = False
+        """Signal the monitor thread to stop and clean up audio."""
+        with self.lock:
+            self.running = False
         self.audio.stop()
+
+    def get_status(self):
+        """Thread-safe accessor for status fields read by the tray refresh loop.
+
+        Returns:
+            tuple: (state, work_time_remaining, completed_rounds, mode_name)
+        """
+        with self.lock:
+            return (
+                self.state,
+                self.work_time_remaining,
+                self.completed_rounds,
+                self.mode_name,
+            )
